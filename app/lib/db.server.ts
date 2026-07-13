@@ -50,6 +50,20 @@ db.run(`
     updated_at TEXT NOT NULL
   )
 `)
+db.run(`
+  CREATE TABLE IF NOT EXISTS auth_login_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip TEXT NOT NULL,
+    occurred_at INTEGER NOT NULL
+  )
+`)
+db.run("CREATE INDEX IF NOT EXISTS auth_login_attempts_ip_occurred_at ON auth_login_attempts (ip, occurred_at)")
+db.run(`
+  CREATE TABLE IF NOT EXISTS auth_ip_blocks (
+    ip TEXT PRIMARY KEY,
+    blocked_until INTEGER NOT NULL
+  )
+`)
 
 const ruleColumns = db.query<{ name: string }, []>("PRAGMA table_info(alert_rules)").all()
 if (!ruleColumns.some((column) => column.name === "channels")) {
@@ -299,4 +313,41 @@ export function getEncryptedFwAlertSettings() {
       "SELECT encrypted_url FROM fwalert_settings WHERE id = 1"
     )
     .get()
+}
+
+const LOGIN_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1_000
+const LOGIN_FAILURE_LIMIT = 10
+
+export function isIpBlocked(ip: string, now = Date.now()) {
+  db.query("DELETE FROM auth_ip_blocks WHERE blocked_until <= ?").run(now)
+  return Boolean(
+    db.query<{ ip: string }, [string, number]>(
+      "SELECT ip FROM auth_ip_blocks WHERE ip = ? AND blocked_until > ?"
+    ).get(ip, now)
+  )
+}
+
+export function recordFailedLogin(ip: string, now = Date.now()) {
+  const windowStart = now - LOGIN_FAILURE_WINDOW_MS
+  db.query("DELETE FROM auth_login_attempts WHERE occurred_at <= ?").run(windowStart)
+  db.query("INSERT INTO auth_login_attempts (ip, occurred_at) VALUES (?, ?)").run(ip, now)
+
+  const attempts = db
+    .query<{ count: number }, [string, number]>(
+      "SELECT COUNT(*) AS count FROM auth_login_attempts WHERE ip = ? AND occurred_at > ?"
+    )
+    .get(ip, windowStart)?.count ?? 0
+
+  if (attempts < LOGIN_FAILURE_LIMIT) return false
+
+  db.query(
+    `INSERT INTO auth_ip_blocks (ip, blocked_until) VALUES (?, ?)
+     ON CONFLICT(ip) DO UPDATE SET blocked_until = excluded.blocked_until`
+  ).run(ip, now + LOGIN_FAILURE_WINDOW_MS)
+  db.query("DELETE FROM auth_login_attempts WHERE ip = ?").run(ip)
+  return true
+}
+
+export function clearFailedLogins(ip: string) {
+  db.query("DELETE FROM auth_login_attempts WHERE ip = ?").run(ip)
 }

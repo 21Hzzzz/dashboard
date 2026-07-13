@@ -3,6 +3,8 @@ import { resolve } from "node:path"
 import { handleAuthRequest } from "./app/lib/auth-api.server"
 import { hasValidSession, isAuthEnabled } from "./app/lib/auth.server"
 import { handleApiRequest } from "./app/lib/bun-api.server"
+import { isIpBlocked } from "./app/lib/db.server"
+import { blockedIpResponse, getClientIp } from "./app/lib/ip-access.server"
 import { startMonitor } from "./app/lib/monitor.service.server"
 
 const clientDirectory = resolve(import.meta.dir, "build/client")
@@ -24,6 +26,7 @@ Bun.serve({
   port,
   async fetch(request) {
     const url = new URL(request.url)
+    if (isIpBlocked(getClientIp(request))) return blockedIpResponse(request)
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, url.pathname)
 
     if (isAuthEnabled() && !hasValidSession(request) && !isStaticAsset(url.pathname)) {
