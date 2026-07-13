@@ -93,12 +93,12 @@ export function PriceMonitoringClient() {
   const [initialData, setInitialData] = React.useState<PageData>({
     symbols: [],
     rules: [],
-    telegram: { configured: false, chatId: null, tokenHint: null, updatedAt: null, encryptionReady: true },
-    fwalert: { configured: false, urlHint: null, updatedAt: null, encryptionReady: true },
+    telegram: { configured: false, chatId: null, token: null, updatedAt: null, encryptionReady: true },
+    fwalert: { configured: false, url: null, updatedAt: null, encryptionReady: true },
   })
   const [rules, setRules] = React.useState<AlertRule[]>([])
-  const [telegram, setTelegram] = React.useState<TelegramSettingsStatus>({ configured: false, chatId: null, tokenHint: null, updatedAt: null, encryptionReady: true })
-  const [fwalert, setFwalert] = React.useState<FwAlertSettingsStatus>({ configured: false, urlHint: null, updatedAt: null, encryptionReady: true })
+  const [telegram, setTelegram] = React.useState<TelegramSettingsStatus>({ configured: false, chatId: null, token: null, updatedAt: null, encryptionReady: true })
+  const [fwalert, setFwalert] = React.useState<FwAlertSettingsStatus>({ configured: false, url: null, updatedAt: null, encryptionReady: true })
   const [monitorError, setMonitorError] = React.useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<AlertRule | null>(null)
@@ -130,7 +130,9 @@ export function PriceMonitoringClient() {
         setRules(dashboard.rules)
         setTelegram(dashboard.telegram)
         setFwalert(dashboard.fwalert)
+        setToken(dashboard.telegram.token ?? "")
         setChatId(dashboard.telegram.chatId ?? "")
+        setFwalertUrl(dashboard.fwalert.url ?? "")
       } catch (error) {
         setMonitorError(error instanceof Error ? error.message : "无法加载监控配置。")
       }
@@ -165,7 +167,7 @@ export function PriceMonitoringClient() {
         body: JSON.stringify({ token, chatId }),
       })
       setTelegram(result.telegram)
-      setToken("")
+      setToken(result.telegram.token ?? "")
       toast.success("Telegram 配置已保存")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存失败")
@@ -194,7 +196,7 @@ export function PriceMonitoringClient() {
         body: JSON.stringify({ url: fwalertUrl }),
       })
       setFwalert(result.fwalert)
-      setFwalertUrl("")
+      setFwalertUrl(result.fwalert.url ?? "")
       toast.success("FwAlert 电话渠道已保存")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存失败")
@@ -294,8 +296,8 @@ export function PriceMonitoringClient() {
               <p className="border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">服务端缺少 PRICE_ALERT_ENCRYPTION_KEY，暂不能保存 Token。</p>
             )}
             <div className="grid gap-2">
-              <Label htmlFor="bot-token">Bot Token {telegram.tokenHint && <span className="text-muted-foreground">({telegram.tokenHint})</span>}</Label>
-              <Input id="bot-token" type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="123456:ABC-DEF..." autoComplete="off" />
+              <Label htmlFor="bot-token">Bot Token</Label>
+              <Input id="bot-token" value={token} onChange={(event) => setToken(event.target.value)} placeholder="123456:ABC-DEF..." autoComplete="off" />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="chat-id">Chat ID</Label>
@@ -319,8 +321,8 @@ export function PriceMonitoringClient() {
               <p className="border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">服务端缺少 PRICE_ALERT_ENCRYPTION_KEY，暂不能保存电话链接。</p>
             )}
             <div className="grid gap-2">
-              <Label htmlFor="fwalert-url">电话推送链接 {fwalert.urlHint && <span className="text-muted-foreground">({fwalert.urlHint})</span>}</Label>
-              <Input id="fwalert-url" type="password" value={fwalertUrl} onChange={(event) => setFwalertUrl(event.target.value)} placeholder="https://fwalert.com/..." autoComplete="off" />
+              <Label htmlFor="fwalert-url">电话推送链接</Label>
+              <Input id="fwalert-url" type="url" value={fwalertUrl} onChange={(event) => setFwalertUrl(event.target.value)} placeholder="https://fwalert.com/..." autoComplete="off" />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void saveFwalert()} disabled={saving || !fwalert.encryptionReady}><Check /> 保存配置</Button>

@@ -1,7 +1,7 @@
 import { decryptSecret, encryptSecret, isEncryptionReady } from "~/lib/crypto.server"
 import {
   getEncryptedTelegramSettings,
-  getTelegramSettingsStatusWithHint,
+  getTelegramSettingsStatusWithSecret,
   saveTelegramSettings,
 } from "~/lib/db.server"
 
@@ -10,7 +10,7 @@ export async function saveTelegramConfiguration(token: string, chatId: string) {
     throw new Error("缺少 PRICE_ALERT_ENCRYPTION_KEY，无法安全保存 Token。")
   }
   saveTelegramSettings(await encryptSecret(token), chatId)
-  return getTelegramSettingsStatusWithHint()
+  return getTelegramSettingsStatusWithSecret()
 }
 
 export async function getTelegramCredentials() {

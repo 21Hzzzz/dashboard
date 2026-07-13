@@ -1,16 +1,22 @@
 import * as React from "react"
-import { KeyRound, LoaderCircle } from "lucide-react"
+import { Eye, EyeOff, KeyRound, LoaderCircle } from "lucide-react"
 import { useNavigate } from "react-router"
 import { toast } from "sonner"
 
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
-import { Input } from "~/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "~/components/ui/input-group"
 import { Label } from "~/components/ui/label"
 
 export default function Login() {
   const navigate = useNavigate()
   const [password, setPassword] = React.useState("")
+  const [passwordVisible, setPasswordVisible] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
 
   React.useEffect(() => {
@@ -52,7 +58,26 @@ export default function Login() {
           <form className="grid gap-4" onSubmit={submit}>
             <div className="grid gap-2">
               <Label htmlFor="panel-password">面板密码</Label>
-              <Input id="panel-password" type="password" autoComplete="current-password" autoFocus value={password} onChange={(event) => setPassword(event.target.value)} />
+              <InputGroup>
+                <InputGroupInput
+                  id="panel-password"
+                  type={passwordVisible ? "text" : "password"}
+                  autoComplete="current-password"
+                  autoFocus
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    aria-label={passwordVisible ? "隐藏密码" : "显示密码"}
+                    title={passwordVisible ? "隐藏密码" : "显示密码"}
+                    onClick={() => setPasswordVisible((visible) => !visible)}
+                  >
+                    {passwordVisible ? <EyeOff /> : <Eye />}
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
             </div>
             <Button type="submit" disabled={submitting || password.length === 0}>
               {submitting && <LoaderCircle className="animate-spin" />} 登录

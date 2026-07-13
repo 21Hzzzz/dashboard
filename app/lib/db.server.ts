@@ -12,7 +12,6 @@ import type {
 import {
   decryptSecret,
   isEncryptionReady,
-  maskSecret,
 } from "~/lib/crypto.server"
 
 const databasePath = process.env.PRICE_ALERT_DB_PATH ?? "./data/price-alert.sqlite"
@@ -194,13 +193,13 @@ export function getTelegramSettingsStatus(): TelegramSettingsStatus {
   return {
     configured: Boolean(row),
     chatId: row?.chat_id ?? null,
-    tokenHint: row ? "已保存" : null,
+    token: null,
     updatedAt: row?.updated_at ?? null,
     encryptionReady: isEncryptionReady(),
   }
 }
 
-export async function getTelegramSettingsStatusWithHint(): Promise<TelegramSettingsStatus> {
+export async function getTelegramSettingsStatusWithSecret(): Promise<TelegramSettingsStatus> {
   const row = db
     .query<{ encrypted_token: string; chat_id: string; updated_at: string }, []>(
       "SELECT encrypted_token, chat_id, updated_at FROM telegram_settings WHERE id = 1"
@@ -212,7 +211,7 @@ export async function getTelegramSettingsStatusWithHint(): Promise<TelegramSetti
     return {
       configured: true,
       chatId: row.chat_id,
-      tokenHint: maskSecret(await decryptSecret(row.encrypted_token)),
+      token: await decryptSecret(row.encrypted_token),
       updatedAt: row.updated_at,
       encryptionReady: isEncryptionReady(),
     }
@@ -220,7 +219,7 @@ export async function getTelegramSettingsStatusWithHint(): Promise<TelegramSetti
     return {
       configured: true,
       chatId: row.chat_id,
-      tokenHint: "已保存（无法解密）",
+      token: null,
       updatedAt: row.updated_at,
       encryptionReady: isEncryptionReady(),
     }
@@ -253,13 +252,13 @@ export function getFwAlertSettingsStatus(): FwAlertSettingsStatus {
     .get()
   return {
     configured: Boolean(row),
-    urlHint: row ? "已保存" : null,
+    url: null,
     updatedAt: row?.updated_at ?? null,
     encryptionReady: isEncryptionReady(),
   }
 }
 
-export async function getFwAlertSettingsStatusWithHint(): Promise<FwAlertSettingsStatus> {
+export async function getFwAlertSettingsStatusWithSecret(): Promise<FwAlertSettingsStatus> {
   const row = db
     .query<{ encrypted_url: string; updated_at: string }, []>(
       "SELECT encrypted_url, updated_at FROM fwalert_settings WHERE id = 1"
@@ -270,14 +269,14 @@ export async function getFwAlertSettingsStatusWithHint(): Promise<FwAlertSetting
   try {
     return {
       configured: true,
-      urlHint: maskSecret(await decryptSecret(row.encrypted_url)),
+      url: await decryptSecret(row.encrypted_url),
       updatedAt: row.updated_at,
       encryptionReady: isEncryptionReady(),
     }
   } catch {
     return {
       configured: true,
-      urlHint: "已保存（无法解密）",
+      url: null,
       updatedAt: row.updated_at,
       encryptionReady: isEncryptionReady(),
     }

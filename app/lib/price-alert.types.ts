@@ -19,14 +19,14 @@ export type AlertRule = {
 export type TelegramSettingsStatus = {
   configured: boolean
   chatId: string | null
-  tokenHint: string | null
+  token: string | null
   updatedAt: string | null
   encryptionReady: boolean
 }
 
 export type FwAlertSettingsStatus = {
   configured: boolean
-  urlHint: string | null
+  url: string | null
   updatedAt: string | null
   encryptionReady: boolean
 }

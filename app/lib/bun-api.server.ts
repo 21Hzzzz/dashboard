@@ -3,8 +3,8 @@ import { isEncryptionReady } from "~/lib/crypto.server"
 import {
   createRule,
   deleteRule,
-  getFwAlertSettingsStatusWithHint,
-  getTelegramSettingsStatusWithHint,
+  getFwAlertSettingsStatusWithSecret,
+  getTelegramSettingsStatusWithSecret,
   listRules,
   updateRule,
 } from "~/lib/db.server"
@@ -44,8 +44,8 @@ export async function handleApiRequest(request: Request, pathname: string) {
     if (pathname === "/api/dashboard" && request.method === "GET") {
       const [symbols, telegram, fwalert] = await Promise.all([
         getSpotSymbols(),
-        getTelegramSettingsStatusWithHint(),
-        getFwAlertSettingsStatusWithHint(),
+        getTelegramSettingsStatusWithSecret(),
+        getFwAlertSettingsStatusWithSecret(),
       ])
       return Response.json({ symbols, rules: listRules(), telegram, fwalert })
     }
@@ -53,7 +53,7 @@ export async function handleApiRequest(request: Request, pathname: string) {
       return Response.json(getMonitorSnapshot())
     }
     if (pathname === "/api/telegram-settings" && request.method === "GET") {
-      return Response.json({ telegram: await getTelegramSettingsStatusWithHint() })
+      return Response.json({ telegram: await getTelegramSettingsStatusWithSecret() })
     }
     if (pathname === "/api/telegram-settings" && request.method === "POST") {
       const body = (await request.json()) as { token?: string; chatId?: string }
@@ -72,7 +72,7 @@ export async function handleApiRequest(request: Request, pathname: string) {
       return Response.json({ ok: true })
     }
     if (pathname === "/api/fwalert-settings" && request.method === "GET") {
-      return Response.json({ fwalert: await getFwAlertSettingsStatusWithHint() })
+      return Response.json({ fwalert: await getFwAlertSettingsStatusWithSecret() })
     }
     if (pathname === "/api/fwalert-settings" && request.method === "POST") {
       const body = (await request.json()) as { url?: string }

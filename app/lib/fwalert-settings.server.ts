@@ -1,7 +1,7 @@
 import { decryptSecret, encryptSecret, isEncryptionReady } from "~/lib/crypto.server"
 import {
   getEncryptedFwAlertSettings,
-  getFwAlertSettingsStatusWithHint,
+  getFwAlertSettingsStatusWithSecret,
   saveFwAlertSettings,
 } from "~/lib/db.server"
 import { validateFwAlertUrl } from "~/lib/fwalert.server"
@@ -12,7 +12,7 @@ export async function saveFwAlertConfiguration(url: string) {
   }
   const validatedUrl = validateFwAlertUrl(url)
   saveFwAlertSettings(await encryptSecret(validatedUrl))
-  return getFwAlertSettingsStatusWithHint()
+  return getFwAlertSettingsStatusWithSecret()
 }
 
 export async function getFwAlertUrl() {
