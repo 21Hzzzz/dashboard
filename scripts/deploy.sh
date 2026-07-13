@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 APP_DIR="/opt/price-alert"
 ENV_FILE="$APP_DIR/.env"
+REPOSITORY_URL="https://github.com/21Hzzzz/price-alert.git"
+DEFAULT_BRANCH="master"
 
 die() { echo "Error: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
@@ -57,6 +59,13 @@ read_panel_password() {
   printf '%s' "$password"
 }
 
+read_domain() {
+  local domain
+  read -r -p "Domain name (for example alert.example.com): " domain
+  [[ "$domain" =~ ^[A-Za-z0-9.-]+$ && "$domain" == *.* ]] || die "Enter a valid DNS name."
+  printf '%s' "$domain"
+}
+
 ensure_runtime_directories() {
   mkdir -p "$APP_DIR/data" "$APP_DIR/caddy/data" "$APP_DIR/caddy/config"
 }
@@ -64,30 +73,28 @@ ensure_runtime_directories() {
 usage() {
   cat <<'EOF'
 Usage:
-  deploy.sh install --repo <GitHub HTTPS URL> --domain <domain> [--branch <branch>]
+  deploy.sh install [--branch <branch>]
   deploy.sh update
   deploy.sh uninstall [--purge-data]
 EOF
 }
 
 install() {
-  local repo="" domain="" branch="master"
+  local domain branch="$DEFAULT_BRANCH"
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --repo) repo="${2:-}"; shift 2 ;;
-      --domain) domain="${2:-}"; shift 2 ;;
       --branch) branch="${2:-}"; shift 2 ;;
       *) die "Unknown install option: $1" ;;
     esac
   done
-  [[ "$repo" =~ ^https://github\.com/.+\.git$ ]] || die "--repo must be a public GitHub HTTPS .git URL."
-  [[ "$domain" =~ ^[A-Za-z0-9.-]+$ && "$domain" == *.* ]] || die "--domain must be a valid DNS name."
+  [[ -n "$branch" ]] || die "--branch cannot be empty."
   [[ ! -e "$APP_DIR" ]] || die "$APP_DIR already exists. Use update or remove it deliberately first."
 
   require_supported_os
   install_docker
-  info "Cloning $repo ($branch)"
-  git clone --depth 1 --branch "$branch" "$repo" "$APP_DIR"
+  domain="$(read_domain)"
+  info "Cloning $REPOSITORY_URL ($branch)"
+  git clone --depth 1 --branch "$branch" "$REPOSITORY_URL" "$APP_DIR"
   ensure_runtime_directories
 
   local password hash
@@ -102,7 +109,7 @@ PRICE_ALERT_ENCRYPTION_KEY=$(openssl rand -hex 32)
 PANEL_PASSWORD_HASH=$hash
 PANEL_SESSION_SECRET=$(openssl rand -hex 32)
 PANEL_COOKIE_SECURE=true
-DEPLOY_REPOSITORY=$repo
+DEPLOY_REPOSITORY=$REPOSITORY_URL
 DEPLOY_BRANCH=$branch
 EOF
   chmod 600 "$ENV_FILE"

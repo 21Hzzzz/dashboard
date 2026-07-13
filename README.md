@@ -6,11 +6,10 @@ Binance 现货价格监控面板，支持 Telegram 与 FwAlert 电话通知。
 
 部署前，请先将一个域名的 A/AAAA 记录指向 VPS，并确保 80、443 端口未被其他服务占用。Caddy 会自动申请并续期 HTTPS 证书。
 
-将 `<owner>/<repo>`、GitHub 仓库 URL 和域名替换为实际值后，以 root 执行：
+以 root 执行下列命令；脚本会在安装时询问已解析到 VPS 的域名。
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/master/scripts/deploy.sh) \
-  install --repo https://github.com/<owner>/<repo>.git --domain alert.example.com
+bash <(curl -fsSL https://raw.githubusercontent.com/21Hzzzz/price-alert/master/scripts/deploy.sh) install
 ```
 
 脚本会隐藏输入面板密码、安装 Docker（如需要）、生成加密及会话密钥，并将应用部署到 `/opt/price-alert`。
