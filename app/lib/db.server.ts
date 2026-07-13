@@ -36,6 +36,8 @@ db.run(`
     trigger_type TEXT NOT NULL DEFAULT 'target' CHECK (trigger_type IN ('target', 'interval')),
     target_price TEXT NOT NULL,
     interval TEXT,
+    interval_reset_range TEXT NOT NULL DEFAULT '0',
+    interval_suppressions TEXT NOT NULL DEFAULT '[]',
     channels TEXT NOT NULL DEFAULT '["telegram"]',
     enabled INTEGER NOT NULL DEFAULT 1,
     last_price TEXT,
@@ -81,6 +83,12 @@ if (!ruleColumns.some((column) => column.name === "trigger_type")) {
 if (!ruleColumns.some((column) => column.name === "interval")) {
   db.run("ALTER TABLE alert_rules ADD COLUMN interval TEXT")
 }
+if (!ruleColumns.some((column) => column.name === "interval_reset_range")) {
+  db.run("ALTER TABLE alert_rules ADD COLUMN interval_reset_range TEXT NOT NULL DEFAULT '0'")
+}
+if (!ruleColumns.some((column) => column.name === "interval_suppressions")) {
+  db.run("ALTER TABLE alert_rules ADD COLUMN interval_suppressions TEXT NOT NULL DEFAULT '[]'")
+}
 
 type RuleRow = {
   id: number
@@ -89,6 +97,8 @@ type RuleRow = {
   trigger_type: string
   target_price: string
   interval: string | null
+  interval_reset_range: string
+  interval_suppressions: string
   channels: string
   enabled: number
   last_price: string | null
@@ -101,6 +111,7 @@ type RuleRow = {
 
 function toRule(row: RuleRow): AlertRule {
   let channels: NotificationChannel[] = ["telegram"]
+  let intervalSuppressions: string[] = []
   try {
     const parsed = JSON.parse(row.channels) as unknown
     if (Array.isArray(parsed)) {
@@ -112,6 +123,14 @@ function toRule(row: RuleRow): AlertRule {
   } catch {
     // Legacy rows retain Telegram as their default notification channel.
   }
+  try {
+    const parsed = JSON.parse(row.interval_suppressions) as unknown
+    if (Array.isArray(parsed)) {
+      intervalSuppressions = parsed.filter((level): level is string => typeof level === "string")
+    }
+  } catch {
+    // Legacy rows have no active interval-level suppressions.
+  }
   return {
     id: row.id,
     symbol: row.symbol,
@@ -119,6 +138,8 @@ function toRule(row: RuleRow): AlertRule {
     direction: row.direction,
     targetPrice: row.target_price,
     interval: row.interval,
+    intervalResetRange: row.interval_reset_range,
+    intervalSuppressions,
     channels,
     enabled: Boolean(row.enabled),
     lastPrice: row.last_price,
@@ -150,15 +171,16 @@ export function createRule(input: {
   direction: AlertDirection
   targetPrice: string
   interval: string | null
+  intervalResetRange: string
   channels: NotificationChannel[]
 }) {
   const now = new Date().toISOString()
   const result = db
     .query(
-      `INSERT INTO alert_rules (symbol, direction, trigger_type, target_price, interval, channels, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO alert_rules (symbol, direction, trigger_type, target_price, interval, interval_reset_range, channels, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(input.symbol, input.direction, input.triggerType, input.targetPrice, input.interval, JSON.stringify(input.channels), now, now)
+    .run(input.symbol, input.direction, input.triggerType, input.targetPrice, input.interval, input.intervalResetRange, JSON.stringify(input.channels), now, now)
   return getRule(Number(result.lastInsertRowid))!
 }
 
@@ -170,6 +192,7 @@ export function updateRule(
     direction: AlertDirection
     targetPrice: string
     interval: string | null
+    intervalResetRange: string
     channels: NotificationChannel[]
     enabled: boolean
   }>
@@ -182,13 +205,14 @@ export function updateRule(
   const direction = input.direction ?? existing.direction
   const targetPrice = input.targetPrice ?? existing.targetPrice
   const interval = "interval" in input ? input.interval ?? null : existing.interval
+  const intervalResetRange = input.intervalResetRange ?? existing.intervalResetRange
   const channels = input.channels ?? existing.channels
   const enabled = input.enabled ?? existing.enabled
   db.query(
     `UPDATE alert_rules
-     SET symbol = ?, direction = ?, trigger_type = ?, target_price = ?, interval = ?, channels = ?, enabled = ?, updated_at = ?
+     SET symbol = ?, direction = ?, trigger_type = ?, target_price = ?, interval = ?, interval_reset_range = ?, channels = ?, enabled = ?, updated_at = ?
      WHERE id = ?`
-  ).run(symbol, direction, triggerType, targetPrice, interval, JSON.stringify(channels), Number(enabled), new Date().toISOString(), id)
+  ).run(symbol, direction, triggerType, targetPrice, interval, intervalResetRange, JSON.stringify(channels), Number(enabled), new Date().toISOString(), id)
   return getRule(id)
 }
 
@@ -198,18 +222,20 @@ export function deleteRule(id: number) {
 
 export function updateRuleMarketState(
   id: number,
-  input: { lastPrice: string; lastTriggeredAt?: string | null; lastPhoneTriggeredAt?: string | null; lastError?: string | null }
+  input: { lastPrice: string; lastTriggeredAt?: string | null; lastPhoneTriggeredAt?: string | null; lastError?: string | null; intervalSuppressions?: string[] }
 ) {
   db.query(
     `UPDATE alert_rules
      SET last_price = ?, last_triggered_at = COALESCE(?, last_triggered_at),
          last_phone_triggered_at = COALESCE(?, last_phone_triggered_at),
+         interval_suppressions = COALESCE(?, interval_suppressions),
          last_error = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     input.lastPrice,
     input.lastTriggeredAt ?? null,
     input.lastPhoneTriggeredAt ?? null,
+    input.intervalSuppressions === undefined ? null : JSON.stringify(input.intervalSuppressions),
     input.lastError ?? null,
     new Date().toISOString(),
     id

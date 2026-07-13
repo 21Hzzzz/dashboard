@@ -33,6 +33,11 @@ function isTriggerType(value: unknown): value is AlertTriggerType {
   return value === "target" || value === "interval"
 }
 
+function isNonNegativePrice(value: string) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0
+}
+
 function isChannels(value: unknown): value is NotificationChannel[] {
   return Array.isArray(value)
     && value.length > 0
@@ -93,15 +98,16 @@ export async function handleApiRequest(request: Request, pathname: string) {
       return Response.json({ rules: listRules() })
     }
     if (pathname === "/api/alert-rules" && request.method === "POST") {
-      const body = (await request.json()) as { symbol?: string; triggerType?: AlertTriggerType; direction?: AlertDirection; targetPrice?: string; interval?: string; channels?: NotificationChannel[] }
+      const body = (await request.json()) as { symbol?: string; triggerType?: AlertTriggerType; direction?: AlertDirection; targetPrice?: string; interval?: string; intervalResetRange?: string; channels?: NotificationChannel[] }
       const symbol = body.symbol?.trim().toUpperCase()
       const triggerType = body.triggerType ?? "target"
       const targetPrice = body.targetPrice?.trim()
       const interval = body.interval?.trim()
+      const intervalResetRange = body.intervalResetRange?.trim()
       if (!symbol || !isTriggerType(triggerType) || !isChannels(body.channels)
         || (triggerType === "target" && (!isDirection(body.direction) || !targetPrice || !isPositivePrice(targetPrice)))
-        || (triggerType === "interval" && (!interval || !isPositivePrice(interval)))) {
-        return error("请填写有效的交易对、触发条件、正数目标价或粒度，并至少选择一个通知渠道。")
+        || (triggerType === "interval" && (!interval || !isPositivePrice(interval) || !intervalResetRange || !isNonNegativePrice(intervalResetRange)))) {
+        return error("请填写有效的交易对、触发条件、正数目标价或粒度、非负重置范围，并至少选择一个通知渠道。")
       }
       if (!await validateSpotSymbol(symbol)) return error("交易对不是可交易的 Binance 现货标的。")
       return Response.json({ rule: createRule({
@@ -110,6 +116,7 @@ export async function handleApiRequest(request: Request, pathname: string) {
         direction: triggerType === "target" ? body.direction! : "above",
         targetPrice: triggerType === "target" ? targetPrice! : interval!,
         interval: triggerType === "interval" ? interval! : null,
+        intervalResetRange: triggerType === "interval" ? intervalResetRange! : "0",
         channels: body.channels,
       }) })
     }
@@ -121,16 +128,17 @@ export async function handleApiRequest(request: Request, pathname: string) {
         return deleteRule(id) ? Response.json({ ok: true }) : error("规则不存在。", 404)
       }
       if (request.method === "PATCH") {
-        const body = (await request.json()) as { symbol?: string; triggerType?: AlertTriggerType; direction?: AlertDirection; targetPrice?: string; interval?: string; enabled?: boolean; channels?: NotificationChannel[] }
+        const body = (await request.json()) as { symbol?: string; triggerType?: AlertTriggerType; direction?: AlertDirection; targetPrice?: string; interval?: string; intervalResetRange?: string; enabled?: boolean; channels?: NotificationChannel[] }
         const existing = getRule(id)
         if (!existing) return error("规则不存在。", 404)
         const triggerType = body.triggerType ?? existing.triggerType
         const direction = body.direction ?? existing.direction
         const targetPrice = body.targetPrice?.trim() ?? existing.targetPrice
         const interval = body.interval?.trim() ?? existing.interval
+        const intervalResetRange = body.intervalResetRange?.trim() ?? existing.intervalResetRange
         if (!isTriggerType(triggerType)) return error("无效的触发条件。")
         if (triggerType === "target" && (!isDirection(direction) || !isPositivePrice(targetPrice))) return error("请填写有效的方向和正数目标价。")
-        if (triggerType === "interval" && (!interval || !isPositivePrice(interval))) return error("粒度必须是正数。")
+        if (triggerType === "interval" && (!interval || !isPositivePrice(interval) || !isNonNegativePrice(intervalResetRange))) return error("粒度必须是正数，重置范围必须是非负数。")
         if (body.channels !== undefined && !isChannels(body.channels)) return error("请至少选择一个通知渠道。")
         if (body.symbol) {
           body.symbol = body.symbol.trim().toUpperCase()
@@ -142,6 +150,7 @@ export async function handleApiRequest(request: Request, pathname: string) {
           direction: triggerType === "target" ? direction : "above",
           targetPrice: triggerType === "target" ? targetPrice : interval!,
           interval: triggerType === "interval" ? interval : null,
+          intervalResetRange: triggerType === "interval" ? intervalResetRange : "0",
         })
         return Response.json({ rule: rule! })
       }

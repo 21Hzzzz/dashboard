@@ -112,6 +112,7 @@ export function PriceMonitoringClient() {
   const [direction, setDirection] = React.useState<AlertDirection>("above")
   const [targetPrice, setTargetPrice] = React.useState("")
   const [interval, setInterval] = React.useState("")
+  const [intervalResetRange, setIntervalResetRange] = React.useState("")
   const [condition, setCondition] = React.useState<AlertCondition>("above")
   const [channels, setChannels] = React.useState<NotificationChannel[]>(["telegram"])
   const [pairPickerOpen, setPairPickerOpen] = React.useState(false)
@@ -151,6 +152,7 @@ export function PriceMonitoringClient() {
     setDirection("above")
     setTargetPrice("")
     setInterval("")
+    setIntervalResetRange("200")
     setCondition("above")
     setChannels(["telegram"])
     setDialogOpen(true)
@@ -162,6 +164,7 @@ export function PriceMonitoringClient() {
     setDirection(rule.direction)
     setTargetPrice(rule.targetPrice)
     setInterval(rule.interval ?? "")
+    setIntervalResetRange(rule.intervalResetRange)
     setCondition(rule.triggerType === "interval" ? "interval" : rule.direction)
     setChannels(rule.channels)
     setDialogOpen(true)
@@ -237,6 +240,7 @@ export function PriceMonitoringClient() {
           direction: condition === "interval" ? "above" : condition,
           targetPrice: condition === "interval" ? undefined : targetPrice,
           interval: condition === "interval" ? interval : undefined,
+          intervalResetRange: condition === "interval" ? intervalResetRange : undefined,
           channels,
         }),
       })
@@ -264,6 +268,7 @@ export function PriceMonitoringClient() {
           direction: values.direction,
           targetPrice: values.targetPrice,
           interval: values.interval,
+          intervalResetRange: values.intervalResetRange,
           channels: values.channels,
         }),
       })
@@ -384,7 +389,7 @@ export function PriceMonitoringClient() {
                   <TableCell className="font-medium">{rule.symbol}</TableCell>
                   <TableCell>{formatPrice(rule.lastPrice)}</TableCell>
                   <TableCell><Badge variant="outline" className={rule.triggerType === "interval" ? "" : rule.direction === "above" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"}>{rule.triggerType === "interval" ? "整数倍价位" : rule.direction === "above" ? "上穿" : "下穿"}</Badge></TableCell>
-                  <TableCell>{rule.triggerType === "interval" ? `每 ${formatPrice(rule.interval ?? rule.targetPrice)}` : formatPrice(rule.targetPrice)}</TableCell>
+                  <TableCell>{rule.triggerType === "interval" ? `每 ${formatPrice(rule.interval ?? rule.targetPrice)} / ±${formatPrice(rule.intervalResetRange)}` : formatPrice(rule.targetPrice)}</TableCell>
                   <TableCell><div className="flex gap-1">{rule.channels.map((channel) => <Badge key={channel} variant="outline">{channel === "telegram" ? "Telegram" : "电话"}</Badge>)}</div></TableCell>
                   <TableCell><Switch checked={rule.enabled} onCheckedChange={(enabled) => void patchRule(rule.id, { enabled })} aria-label={`切换 ${rule.symbol} 规则`} /></TableCell>
                   <TableCell className="text-muted-foreground">{rule.lastError ? <span className="text-destructive" title={rule.lastError}>推送失败</span> : formatDate(rule.lastTriggeredAt)}</TableCell>
@@ -402,10 +407,10 @@ export function PriceMonitoringClient() {
           <div className="grid gap-4">
             <div className="grid gap-2"><Label>Binance 现货交易对</Label><Popover open={pairPickerOpen} onOpenChange={setPairPickerOpen}><PopoverTrigger render={<Button variant="outline" className="w-full justify-between font-normal" />}>{symbol ? symbol : "搜索并选择交易对"}<ChevronDown /></PopoverTrigger><PopoverContent align="start" className="w-[var(--anchor-width)] p-0"><Command><CommandInput placeholder="搜索 BTCUSDT、BTC 或 USDT" /><CommandList><CommandEmpty>未找到交易对</CommandEmpty><CommandGroup>{initialData.symbols.map((pair) => <CommandItem key={pair.symbol} value={`${pair.symbol} ${pair.baseAsset} ${pair.quoteAsset}`} onSelect={() => { setSymbol(pair.symbol); setPairPickerOpen(false) }}><span>{pair.symbol}</span><span className="ml-auto text-muted-foreground">{pair.baseAsset}/{pair.quoteAsset}</span></CommandItem>)}</CommandGroup></CommandList></Command></PopoverContent></Popover></div>
             <div className="grid gap-2"><Label>触发条件</Label><Select value={condition} onValueChange={(value) => setCondition(value as AlertCondition)}><SelectTrigger className="w-full"><SelectValue>{(value: AlertCondition | null) => value === "above" ? "上穿目标价" : value === "below" ? "下穿目标价" : value === "interval" ? "整数倍价位" : "选择触发条件"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="above">上穿目标价</SelectItem><SelectItem value="below">下穿目标价</SelectItem><SelectItem value="interval">整数倍价位</SelectItem></SelectContent></Select></div>
-            {condition === "interval" ? <div className="grid gap-2"><Label htmlFor="price-interval">粒度</Label><Input id="price-interval" inputMode="decimal" value={interval} onChange={(event) => setInterval(event.target.value)} placeholder="例如：1000" /><p className="text-xs text-muted-foreground">价格跨过粒度的整数倍时提醒，例如 BTCUSDT 每 1000 提醒一次。</p></div> : <div className="grid gap-2"><Label htmlFor="target-price">目标价格</Label><Input id="target-price" inputMode="decimal" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="例如：100000" /></div>}
+            {condition === "interval" ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="price-interval">粒度</Label><Input id="price-interval" inputMode="decimal" value={interval} onChange={(event) => setInterval(event.target.value)} placeholder="例如：1000" /></div><div className="grid gap-2"><Label htmlFor="interval-reset-range">重置范围</Label><Input id="interval-reset-range" inputMode="decimal" value={intervalResetRange} onChange={(event) => setIntervalResetRange(event.target.value)} placeholder="例如：200" /></div><p className="text-xs text-muted-foreground sm:col-span-2">触发某一整数倍价位后，价格须离开该价位的上下重置范围，才会再次提醒该价位。</p></div> : <div className="grid gap-2"><Label htmlFor="target-price">目标价格</Label><Input id="target-price" inputMode="decimal" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="例如：100000" /></div>}
             <div className="grid gap-2"><Label>通知渠道（至少选择一个）</Label><div className="grid gap-2 border p-3"><ChannelToggle label="Telegram 推送" channel="telegram" channels={channels} onChange={setChannels} /><ChannelToggle label="FwAlert 电话" channel="phone" channels={channels} onChange={setChannels} /></div></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button><Button onClick={() => void saveRule()} disabled={saving || !symbol || !(condition === "interval" ? interval : targetPrice) || channels.length === 0}>{saving && <LoaderCircle className="animate-spin" />}{editing ? "保存变更" : "创建规则"}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button><Button onClick={() => void saveRule()} disabled={saving || !symbol || !(condition === "interval" ? interval && intervalResetRange : targetPrice) || channels.length === 0}>{saving && <LoaderCircle className="animate-spin" />}{editing ? "保存变更" : "创建规则"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </main>

@@ -58,6 +58,24 @@ export function getCrossedIntervalLevels({
   return indices.map((index) => String(Number((index * step).toPrecision(15))))
 }
 
+export function retainIntervalSuppressions({
+  currentPrice,
+  levels,
+  resetRange,
+}: {
+  currentPrice: string
+  levels: string[]
+  resetRange: string
+}) {
+  const current = Number(currentPrice)
+  const range = Number(resetRange)
+  if (!Number.isFinite(current) || !Number.isFinite(range) || range < 0) return []
+  return levels.filter((level) => {
+    const value = Number(level)
+    return Number.isFinite(value) && Math.abs(current - value) <= range
+  })
+}
+
 export function isWithinCooldown(lastTriggeredAt: string | null, cooldownMs: number, now = Date.now()) {
   if (!lastTriggeredAt) return false
   const timestamp = Date.parse(lastTriggeredAt)

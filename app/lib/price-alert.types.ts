@@ -9,6 +9,8 @@ export type AlertRule = {
   direction: AlertDirection
   targetPrice: string
   interval: string | null
+  intervalResetRange: string
+  intervalSuppressions: string[]
   channels: NotificationChannel[]
   enabled: boolean
   lastPrice: string | null

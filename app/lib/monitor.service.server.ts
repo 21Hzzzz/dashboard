@@ -7,7 +7,7 @@ import {
 } from "~/lib/db.server"
 import { decryptSecret } from "~/lib/crypto.server"
 import { triggerFwAlert } from "~/lib/fwalert.server"
-import { didCrossTarget, getCrossedIntervalLevels, isWithinCooldown } from "~/lib/monitoring"
+import { didCrossTarget, getCrossedIntervalLevels, isWithinCooldown, retainIntervalSuppressions } from "~/lib/monitoring"
 import type { MarketSnapshot } from "~/lib/price-alert.types"
 import { sendTelegramMessage } from "~/lib/telegram.server"
 
@@ -28,6 +28,13 @@ export async function runMonitoringCycle() {
       const currentPrice = prices.get(rule.symbol)
       if (!currentPrice) continue
 
+      const intervalSuppressions = rule.triggerType === "interval"
+        ? retainIntervalSuppressions({
+          currentPrice,
+          levels: rule.intervalSuppressions,
+          resetRange: rule.intervalResetRange,
+        })
+        : undefined
       const crossedLevels = rule.triggerType === "interval"
         ? getCrossedIntervalLevels({
           previousPrice: rule.lastPrice,
@@ -40,9 +47,12 @@ export async function runMonitoringCycle() {
           currentPrice,
           targetPrice: rule.targetPrice,
         }) ? [rule.targetPrice] : []
+      const alertLevels = rule.triggerType === "interval"
+        ? crossedLevels.filter((level) => !intervalSuppressions?.includes(level))
+        : crossedLevels
 
-      if (crossedLevels.length === 0) {
-        updateRuleMarketState(rule.id, { lastPrice: currentPrice, lastError: null })
+      if (alertLevels.length === 0) {
+        updateRuleMarketState(rule.id, { lastPrice: currentPrice, lastError: null, intervalSuppressions })
         continue
       }
 
@@ -52,7 +62,7 @@ export async function runMonitoringCycle() {
           if (!telegram) throw new Error("Telegram 渠道尚未配置。")
           const token = await decryptSecret(telegram.encrypted_token)
           const condition = rule.triggerType === "interval"
-            ? `跨越整数倍价位 ${crossedLevels.join("、")}（粒度 ${rule.interval ?? rule.targetPrice}）`
+            ? `跨越整数倍价位 ${alertLevels.join("、")}（粒度 ${rule.interval ?? rule.targetPrice}，重置范围 ±${rule.intervalResetRange}）`
             : `${rule.direction === "above" ? "上穿" : "下穿"} ${rule.targetPrice}`
           await sendTelegramMessage({
             token,
@@ -70,7 +80,7 @@ export async function runMonitoringCycle() {
       }
 
       if (attempts.length === 0) {
-        updateRuleMarketState(rule.id, { lastPrice: currentPrice, lastError: null })
+        updateRuleMarketState(rule.id, { lastPrice: currentPrice, lastError: null, intervalSuppressions })
         continue
       }
 
@@ -86,11 +96,15 @@ export async function runMonitoringCycle() {
           lastTriggeredAt: new Date().toISOString(),
           lastPhoneTriggeredAt: phoneSucceeded ? new Date().toISOString() : null,
           lastError: errors.length > 0 ? errors.join(" ") : null,
+          intervalSuppressions: rule.triggerType === "interval"
+            ? [...new Set([...(intervalSuppressions ?? []), ...alertLevels])]
+            : undefined,
         })
       } else {
         updateRuleMarketState(rule.id, {
           lastPrice: currentPrice,
           lastError: errors.join(" ") || "通知推送失败。",
+          intervalSuppressions,
         })
       }
     }

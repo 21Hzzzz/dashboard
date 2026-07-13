@@ -25,21 +25,23 @@ test("creates and validates a signed session cookie", () => {
 test("login and logout APIs set secure session cookies", async () => {
   process.env.PANEL_SESSION_SECRET = "test-session-secret"
   process.env.PANEL_PASSWORD_HASH = hashPanelPassword("password")
+  const headers = { "x-forwarded-for": `2001:db8:1::${(Date.now() + 1).toString(16).slice(-4)}` }
   const login = await handleAuthRequest(new Request("https://example.test/api/auth/login", {
     method: "POST",
+    headers,
     body: JSON.stringify({ password: "password" }),
   }), "/api/auth/login")
   expect(login.status).toBe(200)
   expect(login.headers.get("set-cookie")).toContain("HttpOnly")
 
-  const logout = await handleAuthRequest(new Request("https://example.test/api/auth/logout", { method: "POST" }), "/api/auth/logout")
+  const logout = await handleAuthRequest(new Request("https://example.test/api/auth/logout", { method: "POST", headers }), "/api/auth/logout")
   expect(logout.headers.get("set-cookie")).toContain("Max-Age=0")
 })
 
 test("blocks an IP for 24 hours after ten failed password attempts", async () => {
   process.env.PANEL_SESSION_SECRET = "test-session-secret"
   process.env.PANEL_PASSWORD_HASH = hashPanelPassword("password")
-  const headers = { "content-type": "application/json", "x-forwarded-for": `2001:db8::${Date.now().toString(16)}` }
+  const headers = { "content-type": "application/json", "x-forwarded-for": `2001:db8:2::${Date.now().toString(16).slice(-4)}` }
 
   for (let attempt = 1; attempt < 10; attempt++) {
     const response = await handleAuthRequest(new Request("https://example.test/api/auth/login", {
