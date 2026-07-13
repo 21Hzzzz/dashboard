@@ -383,7 +383,7 @@ export function PriceMonitoringClient() {
                 <TableRow key={rule.id}>
                   <TableCell className="font-medium">{rule.symbol}</TableCell>
                   <TableCell>{formatPrice(rule.lastPrice)}</TableCell>
-                  <TableCell><Badge variant={rule.triggerType === "interval" || rule.direction === "above" ? "secondary" : "outline"}>{rule.triggerType === "interval" ? "整数倍价位" : rule.direction === "above" ? "上穿" : "下穿"}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={rule.triggerType === "interval" ? "" : rule.direction === "above" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"}>{rule.triggerType === "interval" ? "整数倍价位" : rule.direction === "above" ? "上穿" : "下穿"}</Badge></TableCell>
                   <TableCell>{rule.triggerType === "interval" ? `每 ${formatPrice(rule.interval ?? rule.targetPrice)}` : formatPrice(rule.targetPrice)}</TableCell>
                   <TableCell><div className="flex gap-1">{rule.channels.map((channel) => <Badge key={channel} variant="outline">{channel === "telegram" ? "Telegram" : "电话"}</Badge>)}</div></TableCell>
                   <TableCell><Switch checked={rule.enabled} onCheckedChange={(enabled) => void patchRule(rule.id, { enabled })} aria-label={`切换 ${rule.symbol} 规则`} /></TableCell>
