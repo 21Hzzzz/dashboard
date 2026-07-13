@@ -1,4 +1,10 @@
+.git
 .react-router
 build
 node_modules
-README.md
+data
+caddy
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

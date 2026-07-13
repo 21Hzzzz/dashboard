@@ -1,5 +1,8 @@
 .DS_Store
 .env*
+!.env.example
+data/
+caddy/
 node_modules
 
 # React Router
