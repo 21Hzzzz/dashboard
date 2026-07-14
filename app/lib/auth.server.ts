@@ -8,8 +8,25 @@ import {
 const COOKIE_NAME = "price_alert_session"
 const SESSION_SECONDS = 60 * 60 * 24 * 7
 
+function isAuthenticationExplicitlyDisabledForDevelopment() {
+  return process.env.NODE_ENV !== "production" && process.env.PANEL_AUTH_DISABLED === "true"
+}
+
+export function assertPanelAuthenticationConfiguration() {
+  if (isAuthenticationExplicitlyDisabledForDevelopment()) return
+
+  const missing = [
+    !process.env.PANEL_PASSWORD_HASH && "PANEL_PASSWORD_HASH",
+    !process.env.PANEL_SESSION_SECRET && "PANEL_SESSION_SECRET",
+  ].filter(Boolean)
+
+  if (missing.length > 0) {
+    throw new Error(`Panel authentication configuration is missing: ${missing.join(", ")}`)
+  }
+}
+
 export function isAuthEnabled() {
-  return Boolean(process.env.PANEL_PASSWORD_HASH && process.env.PANEL_SESSION_SECRET)
+  return !isAuthenticationExplicitlyDisabledForDevelopment()
 }
 
 export function hashPanelPassword(password: string, salt = randomBytes(16).toString("base64url")) {

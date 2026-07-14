@@ -1,0 +1,2 @@
+# Cloudflare origin lockdown is disabled by default.
+# scripts/deploy.sh generates trusted proxy directives here when enabled.

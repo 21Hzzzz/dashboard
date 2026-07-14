@@ -1,7 +1,11 @@
 import { resolve } from "node:path"
 
 import { handleAuthRequest } from "./app/lib/auth-api.server"
-import { hasValidSession, isAuthEnabled } from "./app/lib/auth.server"
+import {
+  assertPanelAuthenticationConfiguration,
+  hasValidSession,
+  isAuthEnabled,
+} from "./app/lib/auth.server"
 import { handleApiRequest } from "./app/lib/bun-api.server"
 import { isIpBlocked, recordPanelAccessLog } from "./app/lib/db.server"
 import { blockedIpResponse, getClientIp } from "./app/lib/ip-access.server"
@@ -19,6 +23,7 @@ function isStaticAsset(pathname: string) {
   return pathname.startsWith("/assets/") || pathname === "/favicon.ico" || pathname === "/manifest.webmanifest"
 }
 
+assertPanelAuthenticationConfiguration()
 startMonitor()
 
 const port = Number(process.env.PORT ?? 3000)

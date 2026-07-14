@@ -22,7 +22,7 @@ require_supported_os() {
 
 install_docker() {
   apt-get update
-  apt-get install -y ca-certificates curl git gnupg openssl
+  apt-get install -y ca-certificates curl git gnupg ipset openssl
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     return
   fi
@@ -81,20 +81,56 @@ ensure_runtime_directories() {
   mkdir -p "$APP_DIR/data" "$APP_DIR/caddy/data" "$APP_DIR/caddy/config"
 }
 
+configure_cloudflare_origin_lockdown() {
+  local enabled="$1"
+  if [[ "$enabled" == "true" ]]; then
+    apt-get update
+    apt-get install -y ipset
+    info "Configuring Cloudflare-only origin access"
+    "$APP_DIR/scripts/cloudflare-origin-lockdown.sh" apply "$APP_DIR"
+  else
+    "$APP_DIR/scripts/cloudflare-origin-lockdown.sh" remove "$APP_DIR"
+  fi
+}
+
+validate_caddyfile() {
+  info "Validating Caddy configuration"
+  (cd "$APP_DIR" && docker compose run --rm --no-deps --entrypoint caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile)
+}
+
+start_application() {
+  validate_caddyfile
+  info "Building and starting Price Alert"
+  (cd "$APP_DIR" && docker compose up -d --build --remove-orphans)
+  # The trusted proxy include is a bind mount, so force Caddy to reload it on every update.
+  (cd "$APP_DIR" && docker compose restart caddy)
+}
+
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage:
-  deploy.sh install [--branch <branch>]
-  deploy.sh update
+  deploy.sh install [--branch <branch>] [--cloudflare-origin-lockdown]
+  deploy.sh update [--cloudflare-origin-lockdown]
   deploy.sh uninstall [--purge-data]
 EOF
 }
 
 install_app() {
-  local domain branch="$DEFAULT_BRANCH"
+  local domain branch="$DEFAULT_BRANCH" cloudflare_origin_lockdown=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --branch) branch="${2:-}"; shift 2 ;;
+      --cloudflare-origin-lockdown) cloudflare_origin_lockdown=true; shift ;;
       *) die "Unknown install option: $1" ;;
     esac
   done
@@ -120,27 +156,40 @@ PRICE_ALERT_ENCRYPTION_KEY=$(openssl rand -hex 32)
 PANEL_PASSWORD_HASH=$hash
 PANEL_SESSION_SECRET=$(openssl rand -hex 32)
 PANEL_COOKIE_SECURE=true
+CLOUDFLARE_ORIGIN_LOCKDOWN=$cloudflare_origin_lockdown
 DEPLOY_REPOSITORY=$REPOSITORY_URL
 DEPLOY_BRANCH=$branch
 EOF
   chmod 600 "$ENV_FILE"
 
-  info "Building and starting Price Alert"
-  (cd "$APP_DIR" && docker compose up -d --build --remove-orphans)
+  configure_cloudflare_origin_lockdown "$cloudflare_origin_lockdown"
+  start_application
   info "Deployment complete: https://$domain"
 }
 
 update() {
+  local requested_lockdown=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --cloudflare-origin-lockdown) requested_lockdown=true; shift ;;
+      *) die "Unknown update option: $1" ;;
+    esac
+  done
   [[ -f "$ENV_FILE" && -d "$APP_DIR/.git" ]] || die "No installation found at $APP_DIR."
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   [[ -n "${DEPLOY_BRANCH:-}" ]] || die "DEPLOY_BRANCH is missing from $ENV_FILE."
+  if [[ -n "$requested_lockdown" ]]; then
+    set_env_value CLOUDFLARE_ORIGIN_LOCKDOWN "$requested_lockdown"
+    CLOUDFLARE_ORIGIN_LOCKDOWN="$requested_lockdown"
+  fi
   ensure_runtime_directories
   info "Updating source from ${DEPLOY_BRANCH}"
   git -C "$APP_DIR" fetch --depth 1 origin "$DEPLOY_BRANCH"
   git -C "$APP_DIR" reset --hard FETCH_HEAD
+  configure_cloudflare_origin_lockdown "${CLOUDFLARE_ORIGIN_LOCKDOWN:-false}"
   info "Rebuilding containers; .env, data, and caddy directories are preserved"
-  (cd "$APP_DIR" && docker compose up -d --build --remove-orphans)
+  start_application
 }
 
 uninstall() {
@@ -148,6 +197,9 @@ uninstall() {
   [[ "${1:-}" != "--purge-data" || $# -eq 1 ]] || die "Unknown uninstall option."
   [[ "${1:-}" == "--purge-data" ]] && purge_data=true
   [[ -d "$APP_DIR" ]] || die "No installation found at $APP_DIR."
+  if [[ -x "$APP_DIR/scripts/cloudflare-origin-lockdown.sh" ]]; then
+    "$APP_DIR/scripts/cloudflare-origin-lockdown.sh" remove "$APP_DIR"
+  fi
   info "Stopping containers"
   (cd "$APP_DIR" && docker compose down --remove-orphans)
   if [[ "$purge_data" == true ]]; then
@@ -164,7 +216,7 @@ main() {
   shift || true
   case "$command" in
     install) install_app "$@" ;;
-    update) [[ $# -eq 0 ]] || die "update takes no options."; update ;;
+    update) update "$@" ;;
     uninstall) uninstall "$@" ;;
     *) usage; exit 1 ;;
   esac
