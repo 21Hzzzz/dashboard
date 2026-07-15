@@ -1,6 +1,6 @@
 # Dashboard
 
-Binance 现货价格监控面板，支持 Telegram 与 FwAlert 电话通知。
+面向个人使用的加密市场监控、钱包操作与合约交互面板。
 
 ## VPS 部署（Ubuntu/Debian root）
 
@@ -8,23 +8,17 @@ Binance 现货价格监控面板，支持 Telegram 与 FwAlert 电话通知。
 
 建议在 Cloudflare 中为域名启用 Proxy（橙云），并在 SSL/TLS 中选择 **Full (strict)**。
 
-### 普通安装
+### 直接安装（不使用 Cloudflare）
+
+将域名的 DNS 记录直接指向 VPS，不开启 Cloudflare Proxy。
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/21Hzzzz/dashboard/master/scripts/deploy.sh) install
 ```
 
-### 从旧版 Price Alert 重新部署
+### 使用 Cloudflare 安装
 
-本项目现使用 `/opt/dashboard`、`DASHBOARD_ENCRYPTION_KEY` 和新的数据库文件名。若旧版部署中没有需要保留的数据，请先在 VPS 上停止并清理旧版，再运行上方的新安装命令：
-
-```bash
-bash /opt/price-alert/scripts/deploy.sh uninstall --purge-data
-```
-
-### Cloudflare 源站锁定安装
-
-若域名已开启 Cloudflare Proxy，使用下列命令。脚本会仅允许 Cloudflare IPv4/IPv6 网段访问 VPS 的 80/443，并每日同步网段；源站 IP 将不能再被直接访问。
+若域名使用 Cloudflare Proxy（橙云），使用下列命令。脚本会仅允许 Cloudflare IPv4/IPv6 网段访问 VPS 的 80/443，并每日同步网段；源站 IP 将不能再被直接访问。
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/21Hzzzz/dashboard/master/scripts/deploy.sh) install --cloudflare-origin-lockdown
