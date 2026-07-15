@@ -31,6 +31,17 @@ export type AlertRule = {
   updatedAt: string
 }
 
+export type AlertRuleConfig = Pick<
+  AlertRule,
+  "market" | "symbol" | "triggerType" | "direction" | "targetPrice" | "interval" | "intervalResetRange" | "basketMembers" | "deviationPercent" | "channels" | "enabled"
+>
+
+export type RuleExportFile = {
+  version: 1
+  exportedAt: string
+  rules: AlertRuleConfig[]
+}
+
 export type TelegramSettingsStatus = {
   configured: boolean
   chatId: string | null

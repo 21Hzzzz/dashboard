@@ -2,12 +2,14 @@ import * as React from "react"
 import {
   Check,
   CircleAlert,
+  Download,
   LoaderCircle,
   Pencil,
   PhoneCall,
   Plus,
   Send,
   Trash2,
+  Upload,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -51,10 +53,12 @@ import {
 import type {
   AlertDirection,
   AlertRule,
+  AlertRuleConfig,
   BasketMember,
   FwAlertSettingsStatus,
   MarketSnapshot,
   NotificationChannel,
+  RuleExportFile,
   SpotMarket,
   SpotSymbol,
   TelegramSettingsStatus,
@@ -95,6 +99,22 @@ function formatPrice(value: string | null) {
   return Number.isFinite(amount) ? amount.toLocaleString(undefined, { maximumFractionDigits: 12 }) : value
 }
 
+function toRuleConfig(rule: AlertRule): AlertRuleConfig {
+  return {
+    market: rule.market,
+    symbol: rule.symbol,
+    triggerType: rule.triggerType,
+    direction: rule.direction,
+    targetPrice: rule.targetPrice,
+    interval: rule.interval,
+    intervalResetRange: rule.intervalResetRange,
+    basketMembers: rule.basketMembers,
+    deviationPercent: rule.deviationPercent,
+    channels: rule.channels,
+    enabled: rule.enabled,
+  }
+}
+
 export function PriceMonitoringClient() {
   const [initialData, setInitialData] = React.useState<PageData>({
     symbols: { binance: [], okx: [] },
@@ -128,6 +148,7 @@ export function PriceMonitoringClient() {
   const [basketPickerOpen, setBasketPickerOpen] = React.useState(false)
   const [basketMembers, setBasketMembers] = React.useState<BasketMember[]>([])
   const [deviationPercent, setDeviationPercent] = React.useState("")
+  const importInputRef = React.useRef<HTMLInputElement>(null)
 
   const refresh = React.useCallback(async () => {
     try {
@@ -363,8 +384,49 @@ export function PriceMonitoringClient() {
     }
   }
 
+  function exportRules() {
+    const payload: RuleExportFile = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      rules: rules.map(toRuleConfig),
+    }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `price-alert-rules-${new Date().toISOString().slice(0, 10)}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success(`已导出 ${rules.length} 条规则`)
+  }
+
+  async function importRules(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+    if (file.size > 1_000_000) {
+      toast.error("导入文件不能超过 1 MB")
+      return
+    }
+    setSaving(true)
+    try {
+      const payload = JSON.parse(await file.text()) as RuleExportFile
+      const result = await requestJson<{ rules: AlertRule[] }>("/api/alert-rules/import", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+      setRules((current) => [...result.rules, ...current].sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
+      toast.success(`已导入 ${result.rules.length} 条规则`)
+      void refresh()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导入规则失败")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <main className="flex flex-1 flex-col gap-5 p-4 md:p-6">
+      <Input ref={importInputRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void importRules(event)} />
       <section className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
           <p className="text-xs text-muted-foreground">BINANCE / OKX SPOT · 5 秒刷新</p>
@@ -444,9 +506,9 @@ export function PriceMonitoringClient() {
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <div>
             <CardTitle>监控规则</CardTitle>
-            <CardDescription>仅在价格实际穿越目标价时发送一次提醒。</CardDescription>
+            <CardDescription>导入会新增规则而不会删除当前配置；仅在条件首次满足时发送提醒。</CardDescription>
           </div>
-          <Badge variant="outline">{rules.filter((rule) => rule.enabled).length} active</Badge>
+          <div className="flex flex-wrap items-center justify-end gap-2"><Button size="sm" variant="outline" onClick={exportRules}><Download /> 导出</Button><Button size="sm" variant="outline" onClick={() => importInputRef.current?.click()} disabled={saving}><Upload /> 导入</Button><Badge variant="outline">{rules.filter((rule) => rule.enabled).length} active</Badge></div>
         </CardHeader>
         <CardContent>
           {rules.length === 0 ? (

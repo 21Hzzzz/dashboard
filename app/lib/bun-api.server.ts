@@ -13,7 +13,7 @@ import {
 import { isPositivePrice } from "~/lib/monitoring"
 import { getMonitorSnapshot } from "~/lib/monitor.service.server"
 import { getSpotSymbols as getOkxSpotSymbols } from "~/lib/okx.server"
-import type { AlertDirection, AlertTriggerType, BasketMember, NotificationChannel, SpotMarket, SpotSymbol } from "~/lib/price-alert.types"
+import type { AlertDirection, AlertRuleConfig, AlertTriggerType, BasketMember, NotificationChannel, RuleExportFile, SpotMarket, SpotSymbol } from "~/lib/price-alert.types"
 import { triggerFwAlert } from "~/lib/fwalert.server"
 import { getFwAlertUrl, saveFwAlertConfiguration } from "~/lib/fwalert-settings.server"
 import {
@@ -81,6 +81,49 @@ async function validateBasketMembers(members: BasketMember[], anchor: BasketMemb
   return valid.every(Boolean)
 }
 
+function normalizeRuleConfig(value: unknown): AlertRuleConfig | null {
+  if (!value || typeof value !== "object") return null
+  const raw = value as Partial<AlertRuleConfig>
+  const market = raw.market
+  const symbol = typeof raw.symbol === "string" ? raw.symbol.trim().toUpperCase() : ""
+  const triggerType = raw.triggerType
+  const direction = raw.direction
+  const targetPrice = typeof raw.targetPrice === "string" ? raw.targetPrice.trim() : ""
+  const interval = typeof raw.interval === "string" ? raw.interval.trim() : raw.interval === null ? null : undefined
+  const intervalResetRange = typeof raw.intervalResetRange === "string" ? raw.intervalResetRange.trim() : ""
+  const basketMembers = triggerType === "basket" ? normalizeBasketMembers(raw.basketMembers) : []
+  const deviationPercent = typeof raw.deviationPercent === "string" ? raw.deviationPercent.trim() : null
+  if (!isSpotMarket(market) || !symbol || !isTriggerType(triggerType) || !isDirection(direction) || !isChannels(raw.channels) || interval === undefined) return null
+  if (triggerType === "target" && !isPositivePrice(targetPrice)) return null
+  if (triggerType === "interval" && (!interval || !isPositivePrice(interval) || !isNonNegativePrice(intervalResetRange))) return null
+  if (triggerType === "basket" && (!basketMembers || !deviationPercent || !isPositivePrice(deviationPercent))) return null
+  if (typeof raw.enabled !== "boolean") return null
+  return {
+    market,
+    symbol,
+    triggerType,
+    direction,
+    targetPrice: triggerType === "target" ? targetPrice : triggerType === "interval" ? interval! : "0",
+    interval: triggerType === "interval" ? interval! : null,
+    intervalResetRange: triggerType === "interval" ? intervalResetRange : "0",
+    basketMembers: basketMembers ?? [],
+    deviationPercent: triggerType === "basket" ? deviationPercent! : null,
+    channels: raw.channels,
+    enabled: raw.enabled,
+  }
+}
+
+async function validateImportedRules(rules: AlertRuleConfig[]) {
+  const [binanceSymbols, okxSymbols] = await Promise.all([getBinanceSpotSymbols(), getOkxSpotSymbols()])
+  const available = {
+    binance: new Set(binanceSymbols.map((pair) => pair.symbol)),
+    okx: new Set(okxSymbols.map((pair) => pair.symbol)),
+  }
+  return rules.every((rule) => available[rule.market].has(rule.symbol)
+    && (rule.triggerType !== "basket" || rule.basketMembers.every((member) => available[member.market].has(member.symbol)
+      && !(member.market === rule.market && member.symbol === rule.symbol))))
+}
+
 export async function handleApiRequest(request: Request, pathname: string) {
   try {
     if (pathname === "/api/dashboard" && request.method === "GET") {
@@ -132,6 +175,18 @@ export async function handleApiRequest(request: Request, pathname: string) {
     }
     if (pathname === "/api/alert-rules" && request.method === "GET") {
       return Response.json({ rules: listRules() })
+    }
+    if (pathname === "/api/alert-rules/import" && request.method === "POST") {
+      const body = (await request.json()) as Partial<RuleExportFile>
+      if (body.version !== 1 || !Array.isArray(body.rules) || body.rules.length === 0 || body.rules.length > 500) {
+        return error("导入文件无效；规则数量必须在 1 到 500 条之间。")
+      }
+      const rules = body.rules.map(normalizeRuleConfig)
+      if (rules.some((rule) => !rule)) return error("导入文件中存在无效规则。")
+      const validRules = rules as AlertRuleConfig[]
+      if (!await validateImportedRules(validRules)) return error("导入文件包含当前不可交易、无效或与锚点重复的交易对。")
+      const created = validRules.map((rule) => createRule(rule))
+      return Response.json({ rules: created })
     }
     if (pathname === "/api/alert-rules" && request.method === "POST") {
       const body = (await request.json()) as { market?: SpotMarket; symbol?: string; triggerType?: AlertTriggerType; direction?: AlertDirection; targetPrice?: string; interval?: string; intervalResetRange?: string; basketMembers?: BasketMember[]; deviationPercent?: string; channels?: NotificationChannel[] }

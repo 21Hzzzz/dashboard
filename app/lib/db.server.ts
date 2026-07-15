@@ -285,14 +285,15 @@ export function createRule(input: {
   basketMembers: Array<{ market: SpotMarket; symbol: string }>
   deviationPercent: string | null
   channels: NotificationChannel[]
+  enabled?: boolean
 }) {
   const now = new Date().toISOString()
   const result = db
     .query(
-      `INSERT INTO alert_rules (market, symbol, direction, trigger_type, target_price, interval, interval_reset_range, basket_members, deviation_percent, channels, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO alert_rules (market, symbol, direction, trigger_type, target_price, interval, interval_reset_range, basket_members, deviation_percent, channels, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(input.market, input.symbol, input.direction, input.triggerType, input.targetPrice, input.interval, input.intervalResetRange, JSON.stringify(input.basketMembers), input.deviationPercent, JSON.stringify(input.channels), now, now)
+    .run(input.market, input.symbol, input.direction, input.triggerType, input.targetPrice, input.interval, input.intervalResetRange, JSON.stringify(input.basketMembers), input.deviationPercent, JSON.stringify(input.channels), Number(input.enabled ?? true), now, now)
   return getRule(Number(result.lastInsertRowid))!
 }
 
