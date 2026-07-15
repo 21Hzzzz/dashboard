@@ -444,10 +444,10 @@ export function PriceMonitoringClient() {
 
       <section className="grid gap-5 xl:grid-cols-3">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0"><div>
             <CardTitle>Telegram 推送渠道</CardTitle>
             <CardDescription>使用 Bot Token 和 Chat ID 接收价格穿越提醒。</CardDescription>
-          </CardHeader>
+          </div><Badge variant="outline" className={telegram.configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"}>{telegram.configured ? "已配置" : "未配置"}</Badge></CardHeader>
           <CardContent className="grid gap-4">
             {!telegram.encryptionReady && (
               <p className="border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">服务端缺少 PRICE_ALERT_ENCRYPTION_KEY，暂不能保存 Token。</p>
@@ -463,16 +463,15 @@ export function PriceMonitoringClient() {
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void saveTelegram()} disabled={saving || !telegram.encryptionReady}><Check /> 保存配置</Button>
               <Button variant="outline" onClick={() => void testTelegram()} disabled={saving || !telegram.configured}><Send /> 发送测试</Button>
-              <Badge variant={telegram.configured ? "secondary" : "outline"}>{telegram.configured ? "已配置" : "未配置"}</Badge>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0"><div>
             <CardTitle>FwAlert 电话渠道</CardTitle>
             <CardDescription>保存平台提供的电话推送链接；每次调用由平台决定是否触发电话。</CardDescription>
-          </CardHeader>
+          </div><Badge variant="outline" className={fwalert.configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"}>{fwalert.configured ? "已配置" : "未配置"}</Badge></CardHeader>
           <CardContent className="grid gap-4">
             {!fwalert.encryptionReady && (
               <p className="border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">服务端缺少 PRICE_ALERT_ENCRYPTION_KEY，暂不能保存电话链接。</p>
@@ -484,7 +483,6 @@ export function PriceMonitoringClient() {
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void saveFwalert()} disabled={saving || !fwalert.encryptionReady}><Check /> 保存配置</Button>
               <Button variant="outline" onClick={() => void testFwalert()} disabled={saving || !fwalert.configured}><PhoneCall /> 电话测试</Button>
-              <Badge variant={fwalert.configured ? "secondary" : "outline"}>{fwalert.configured ? "已配置" : "未配置"}</Badge>
             </div>
           </CardContent>
         </Card>
