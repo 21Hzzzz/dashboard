@@ -40,6 +40,22 @@ bash /opt/price-alert/scripts/deploy.sh update --cloudflare-origin-lockdown
 
 启用后，更新会先同步 Cloudflare IP 网段并重载 Caddy 的可信代理配置。若无法下载网段或域名未解析到 Cloudflare，更新会停止，保留上一次成功的防火墙规则。
 
+### 更换域名
+
+先在 Cloudflare 完成新域名的配置：
+
+- 将新域名的 `A` 记录指向 VPS IPv4；如 VPS 使用 IPv6，同时设置 `AAAA` 记录。
+- 开启 Cloudflare Proxy（橙云）。若启用了本项目的源站锁定，这是必须项。
+- 在 Cloudflare 的 SSL/TLS 设置中确认模式为 **Full (strict)**。
+
+DNS 生效后，以 root 执行：
+
+```bash
+bash /opt/price-alert/scripts/deploy.sh change-domain --domain alert.example.com
+```
+
+该命令会备份 `.env`、保留 `data/`、面板密码与 Caddy 数据，并重建服务以让 Caddy 为新域名申请 HTTPS 证书。旧域名不会继续提供面板访问。
+
 ### 卸载
 
 卸载容器并保留数据；如曾启用源站锁定，也会清理本项目创建的防火墙规则和 systemd 同步任务：

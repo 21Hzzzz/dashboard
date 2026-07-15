@@ -1,11 +1,10 @@
 import * as React from "react"
-import { ChartNoAxesCombined, Radar, ScrollText } from "lucide-react"
+import { ChartNoAxesCombined, Radar, ScrollText, Wallet } from "lucide-react"
 import { useLocation } from "react-router"
 
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -20,9 +19,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const location = useLocation()
   const navigation = [
     {
-      title: "监控",
+      title: "工具",
       items: [
         { title: "价格监控", url: "/price-monitoring", icon: Radar, isActive: location.pathname === "/price-monitoring" },
+        { title: "钱包", url: "/wallet", icon: Wallet, isActive: location.pathname === "/wallet" },
       ],
     },
     {
@@ -40,7 +40,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <span className="flex size-7 items-center justify-center bg-primary text-primary-foreground">
             <ChartNoAxesCombined className="size-4" />
           </span>
-          Price Alert
+          Dashboard
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -65,9 +65,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroup>
         ))}
       </SidebarContent>
-      <SidebarFooter>
-        <p className="px-2 py-2 text-xs text-muted-foreground">更多模块将在此处添加</p>
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

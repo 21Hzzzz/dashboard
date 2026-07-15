@@ -45,7 +45,7 @@ Bun.serve({
       if (url.pathname !== "/login") return Response.redirect(new URL("/login", url), 302)
     }
 
-    if (hasValidSession(request) && request.method === "GET" && (url.pathname === "/price-monitoring" || url.pathname === "/access-logs")) {
+    if (hasValidSession(request) && request.method === "GET" && (url.pathname === "/price-monitoring" || url.pathname === "/wallet" || url.pathname === "/access-logs")) {
       recordPanelAccessLog({ ip, event: "panel_access", status: "success", path: url.pathname })
     }
 

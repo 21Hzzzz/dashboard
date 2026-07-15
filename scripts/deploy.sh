@@ -121,6 +121,7 @@ usage() {
 Usage:
   deploy.sh install [--branch <branch>] [--cloudflare-origin-lockdown]
   deploy.sh update [--cloudflare-origin-lockdown]
+  deploy.sh change-domain --domain <domain>
   deploy.sh uninstall [--purge-data]
 EOF
 }
@@ -192,6 +193,34 @@ update() {
   start_application
 }
 
+change_domain() {
+  local domain=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --domain) domain="${2:-}"; shift 2 ;;
+      *) die "Unknown change-domain option: $1" ;;
+    esac
+  done
+  [[ -f "$ENV_FILE" && -d "$APP_DIR/.git" ]] || die "No installation found at $APP_DIR."
+  [[ "$domain" =~ ^[A-Za-z0-9.-]+$ && "$domain" == *.* ]] || die "Provide a valid DNS name with --domain."
+
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  [[ -n "${DOMAIN:-}" ]] || die "DOMAIN is missing from $ENV_FILE."
+  if [[ "$DOMAIN" == "$domain" ]]; then
+    info "Domain is already https://$domain"
+    return
+  fi
+
+  info "Changing public domain from $DOMAIN to $domain"
+  info "Before Caddy can issue HTTPS, point the Cloudflare A/AAAA record for $domain to this VPS, enable Proxy, and set SSL/TLS to Full (strict)."
+  cp -p "$ENV_FILE" "$ENV_FILE.backup.$(date +%Y%m%d%H%M%S)"
+  set_env_value DOMAIN "$domain"
+  start_application
+  info "Domain change complete: https://$domain"
+  info "The prior domain is no longer configured. Its preserved Caddy certificates can be removed later with normal Caddy storage cleanup if desired."
+}
+
 uninstall() {
   local purge_data=false
   [[ "${1:-}" != "--purge-data" || $# -eq 1 ]] || die "Unknown uninstall option."
@@ -217,6 +246,7 @@ main() {
   case "$command" in
     install) install_app "$@" ;;
     update) update "$@" ;;
+    change-domain) change_domain "$@" ;;
     uninstall) uninstall "$@" ;;
     *) usage; exit 1 ;;
   esac

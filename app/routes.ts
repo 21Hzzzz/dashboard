@@ -5,6 +5,7 @@ export default [
   route("login", "routes/login.tsx"),
   layout("routes/app-layout.tsx", [
     route("price-monitoring", "routes/price-monitoring.tsx"),
+    route("wallet", "routes/wallet.tsx"),
     route("access-logs", "routes/access-logs.tsx"),
   ]),
 ] satisfies RouteConfig
