@@ -10,6 +10,7 @@ import type {
   FwAlertSettingsStatus,
   NotificationChannel,
   PanelAccessLog,
+  SpotMarket,
   TelegramSettingsStatus,
 } from "~/lib/price-alert.types"
 import {
@@ -33,13 +34,17 @@ db.run(`
 db.run(`
   CREATE TABLE IF NOT EXISTS alert_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    market TEXT NOT NULL DEFAULT 'binance' CHECK (market IN ('binance', 'okx')),
     symbol TEXT NOT NULL,
     direction TEXT NOT NULL CHECK (direction IN ('above', 'below')),
-    trigger_type TEXT NOT NULL DEFAULT 'target' CHECK (trigger_type IN ('target', 'interval')),
+    trigger_type TEXT NOT NULL DEFAULT 'target',
     target_price TEXT NOT NULL,
     interval TEXT,
     interval_reset_range TEXT NOT NULL DEFAULT '0',
     interval_suppressions TEXT NOT NULL DEFAULT '[]',
+    basket_members TEXT NOT NULL DEFAULT '[]',
+    deviation_percent TEXT,
+    basket_breaches TEXT NOT NULL DEFAULT '[]',
     channels TEXT NOT NULL DEFAULT '["telegram"]',
     enabled INTEGER NOT NULL DEFAULT 1,
     last_price TEXT,
@@ -102,9 +107,71 @@ if (!ruleColumns.some((column) => column.name === "interval_reset_range")) {
 if (!ruleColumns.some((column) => column.name === "interval_suppressions")) {
   db.run("ALTER TABLE alert_rules ADD COLUMN interval_suppressions TEXT NOT NULL DEFAULT '[]'")
 }
+if (!ruleColumns.some((column) => column.name === "market")) {
+  db.run("ALTER TABLE alert_rules ADD COLUMN market TEXT NOT NULL DEFAULT 'binance'")
+}
+if (!ruleColumns.some((column) => column.name === "basket_members")) {
+  db.run("ALTER TABLE alert_rules ADD COLUMN basket_members TEXT NOT NULL DEFAULT '[]'")
+}
+if (!ruleColumns.some((column) => column.name === "deviation_percent")) {
+  db.run("ALTER TABLE alert_rules ADD COLUMN deviation_percent TEXT")
+}
+if (!ruleColumns.some((column) => column.name === "basket_breaches")) {
+  db.run("ALTER TABLE alert_rules ADD COLUMN basket_breaches TEXT NOT NULL DEFAULT '[]'")
+}
+
+const ruleTableSql = db.query<{ sql: string }, []>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'alert_rules'").get()?.sql ?? ""
+if (/CHECK\s*\(\s*trigger_type\s+IN\s*\(\s*'target'\s*,\s*'interval'\s*\)\s*\)/i.test(ruleTableSql)) {
+  db.run("BEGIN")
+  try {
+    db.run("ALTER TABLE alert_rules RENAME TO alert_rules_legacy")
+    db.run(`
+      CREATE TABLE alert_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        market TEXT NOT NULL DEFAULT 'binance' CHECK (market IN ('binance', 'okx')),
+        symbol TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('above', 'below')),
+        trigger_type TEXT NOT NULL DEFAULT 'target',
+        target_price TEXT NOT NULL,
+        interval TEXT,
+        interval_reset_range TEXT NOT NULL DEFAULT '0',
+        interval_suppressions TEXT NOT NULL DEFAULT '[]',
+        basket_members TEXT NOT NULL DEFAULT '[]',
+        deviation_percent TEXT,
+        basket_breaches TEXT NOT NULL DEFAULT '[]',
+        channels TEXT NOT NULL DEFAULT '["telegram"]',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        last_price TEXT,
+        last_triggered_at TEXT,
+        last_phone_triggered_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `)
+    db.run(`
+      INSERT INTO alert_rules (
+        id, market, symbol, direction, trigger_type, target_price, interval, interval_reset_range,
+        interval_suppressions, basket_members, deviation_percent, basket_breaches, channels, enabled,
+        last_price, last_triggered_at, last_phone_triggered_at, last_error, created_at, updated_at
+      )
+      SELECT
+        id, market, symbol, direction, trigger_type, target_price, interval, interval_reset_range,
+        interval_suppressions, basket_members, deviation_percent, basket_breaches, channels, enabled,
+        last_price, last_triggered_at, last_phone_triggered_at, last_error, created_at, updated_at
+      FROM alert_rules_legacy
+    `)
+    db.run("DROP TABLE alert_rules_legacy")
+    db.run("COMMIT")
+  } catch (error) {
+    db.run("ROLLBACK")
+    throw error
+  }
+}
 
 type RuleRow = {
   id: number
+  market: string
   symbol: string
   direction: AlertDirection
   trigger_type: string
@@ -112,6 +179,9 @@ type RuleRow = {
   interval: string | null
   interval_reset_range: string
   interval_suppressions: string
+  basket_members: string
+  deviation_percent: string | null
+  basket_breaches: string
   channels: string
   enabled: number
   last_price: string | null
@@ -125,6 +195,8 @@ type RuleRow = {
 function toRule(row: RuleRow): AlertRule {
   let channels: NotificationChannel[] = ["telegram"]
   let intervalSuppressions: string[] = []
+  let basketMembers: Array<{ market: SpotMarket; symbol: string }> = []
+  let basketBreaches: string[] = []
   try {
     const parsed = JSON.parse(row.channels) as unknown
     if (Array.isArray(parsed)) {
@@ -144,15 +216,39 @@ function toRule(row: RuleRow): AlertRule {
   } catch {
     // Legacy rows have no active interval-level suppressions.
   }
+  try {
+    const parsed = JSON.parse(row.basket_members) as unknown
+    if (Array.isArray(parsed)) {
+      basketMembers = parsed.flatMap((member) => {
+        if (!member || typeof member !== "object") return []
+        const { market, symbol } = member as { market?: unknown; symbol?: unknown }
+        return (market === "binance" || market === "okx") && typeof symbol === "string" && symbol.length > 0
+          ? [{ market, symbol }]
+          : []
+      })
+    }
+  } catch {
+    // Legacy rows have no basket members.
+  }
+  try {
+    const parsed = JSON.parse(row.basket_breaches) as unknown
+    if (Array.isArray(parsed)) basketBreaches = parsed.filter((key): key is string => typeof key === "string")
+  } catch {
+    // Legacy rows have no active basket breaches.
+  }
   return {
     id: row.id,
+    market: row.market === "okx" ? "okx" : "binance",
     symbol: row.symbol,
-    triggerType: row.trigger_type === "interval" ? "interval" : "target",
+    triggerType: row.trigger_type === "interval" || row.trigger_type === "basket" ? row.trigger_type : "target",
     direction: row.direction,
     targetPrice: row.target_price,
     interval: row.interval,
     intervalResetRange: row.interval_reset_range,
     intervalSuppressions,
+    basketMembers,
+    deviationPercent: row.deviation_percent,
+    basketBreaches,
     channels,
     enabled: Boolean(row.enabled),
     lastPrice: row.last_price,
@@ -179,33 +275,39 @@ export function getRule(id: number) {
 }
 
 export function createRule(input: {
+  market: SpotMarket
   symbol: string
   triggerType: AlertTriggerType
   direction: AlertDirection
   targetPrice: string
   interval: string | null
   intervalResetRange: string
+  basketMembers: Array<{ market: SpotMarket; symbol: string }>
+  deviationPercent: string | null
   channels: NotificationChannel[]
 }) {
   const now = new Date().toISOString()
   const result = db
     .query(
-      `INSERT INTO alert_rules (symbol, direction, trigger_type, target_price, interval, interval_reset_range, channels, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO alert_rules (market, symbol, direction, trigger_type, target_price, interval, interval_reset_range, basket_members, deviation_percent, channels, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(input.symbol, input.direction, input.triggerType, input.targetPrice, input.interval, input.intervalResetRange, JSON.stringify(input.channels), now, now)
+    .run(input.market, input.symbol, input.direction, input.triggerType, input.targetPrice, input.interval, input.intervalResetRange, JSON.stringify(input.basketMembers), input.deviationPercent, JSON.stringify(input.channels), now, now)
   return getRule(Number(result.lastInsertRowid))!
 }
 
 export function updateRule(
   id: number,
   input: Partial<{
+    market: SpotMarket
     symbol: string
     triggerType: AlertTriggerType
     direction: AlertDirection
     targetPrice: string
     interval: string | null
     intervalResetRange: string
+    basketMembers: Array<{ market: SpotMarket; symbol: string }>
+    deviationPercent: string | null
     channels: NotificationChannel[]
     enabled: boolean
   }>
@@ -213,19 +315,22 @@ export function updateRule(
   const existing = getRule(id)
   if (!existing) return null
 
+  const market = input.market ?? existing.market
   const symbol = input.symbol ?? existing.symbol
   const triggerType = input.triggerType ?? existing.triggerType
   const direction = input.direction ?? existing.direction
   const targetPrice = input.targetPrice ?? existing.targetPrice
   const interval = "interval" in input ? input.interval ?? null : existing.interval
   const intervalResetRange = input.intervalResetRange ?? existing.intervalResetRange
+  const basketMembers = input.basketMembers ?? existing.basketMembers
+  const deviationPercent = "deviationPercent" in input ? input.deviationPercent ?? null : existing.deviationPercent
   const channels = input.channels ?? existing.channels
   const enabled = input.enabled ?? existing.enabled
   db.query(
     `UPDATE alert_rules
-     SET symbol = ?, direction = ?, trigger_type = ?, target_price = ?, interval = ?, interval_reset_range = ?, channels = ?, enabled = ?, updated_at = ?
+     SET market = ?, symbol = ?, direction = ?, trigger_type = ?, target_price = ?, interval = ?, interval_reset_range = ?, basket_members = ?, deviation_percent = ?, channels = ?, enabled = ?, updated_at = ?
      WHERE id = ?`
-  ).run(symbol, direction, triggerType, targetPrice, interval, intervalResetRange, JSON.stringify(channels), Number(enabled), new Date().toISOString(), id)
+  ).run(market, symbol, direction, triggerType, targetPrice, interval, intervalResetRange, JSON.stringify(basketMembers), deviationPercent, JSON.stringify(channels), Number(enabled), new Date().toISOString(), id)
   return getRule(id)
 }
 
@@ -235,13 +340,14 @@ export function deleteRule(id: number) {
 
 export function updateRuleMarketState(
   id: number,
-  input: { lastPrice: string; lastTriggeredAt?: string | null; lastPhoneTriggeredAt?: string | null; lastError?: string | null; intervalSuppressions?: string[] }
+  input: { lastPrice: string; lastTriggeredAt?: string | null; lastPhoneTriggeredAt?: string | null; lastError?: string | null; intervalSuppressions?: string[]; basketBreaches?: string[] }
 ) {
   db.query(
     `UPDATE alert_rules
      SET last_price = ?, last_triggered_at = COALESCE(?, last_triggered_at),
          last_phone_triggered_at = COALESCE(?, last_phone_triggered_at),
          interval_suppressions = COALESCE(?, interval_suppressions),
+         basket_breaches = COALESCE(?, basket_breaches),
          last_error = ?, updated_at = ?
      WHERE id = ?`
   ).run(
@@ -249,6 +355,7 @@ export function updateRuleMarketState(
     input.lastTriggeredAt ?? null,
     input.lastPhoneTriggeredAt ?? null,
     input.intervalSuppressions === undefined ? null : JSON.stringify(input.intervalSuppressions),
+    input.basketBreaches === undefined ? null : JSON.stringify(input.basketBreaches),
     input.lastError ?? null,
     new Date().toISOString(),
     id

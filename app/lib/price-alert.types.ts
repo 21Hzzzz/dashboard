@@ -1,9 +1,16 @@
 export type AlertDirection = "above" | "below"
-export type AlertTriggerType = "target" | "interval"
+export type AlertTriggerType = "target" | "interval" | "basket"
 export type NotificationChannel = "telegram" | "phone"
+export type SpotMarket = "binance" | "okx"
+
+export type BasketMember = {
+  market: SpotMarket
+  symbol: string
+}
 
 export type AlertRule = {
   id: number
+  market: SpotMarket
   symbol: string
   triggerType: AlertTriggerType
   direction: AlertDirection
@@ -11,6 +18,9 @@ export type AlertRule = {
   interval: string | null
   intervalResetRange: string
   intervalSuppressions: string[]
+  basketMembers: BasketMember[]
+  deviationPercent: string | null
+  basketBreaches: string[]
   channels: NotificationChannel[]
   enabled: boolean
   lastPrice: string | null
@@ -36,7 +46,7 @@ export type FwAlertSettingsStatus = {
   encryptionReady: boolean
 }
 
-export type BinanceSymbol = {
+export type SpotSymbol = {
   symbol: string
   baseAsset: string
   quoteAsset: string

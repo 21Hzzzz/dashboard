@@ -1,4 +1,4 @@
-import { getLatestPrices } from "~/lib/binance.server"
+import { getLatestPrices as getBinanceLatestPrices } from "~/lib/binance.server"
 import {
   getEncryptedFwAlertSettings,
   getEncryptedTelegramSettings,
@@ -7,7 +7,8 @@ import {
 } from "~/lib/db.server"
 import { decryptSecret } from "~/lib/crypto.server"
 import { triggerFwAlert } from "~/lib/fwalert.server"
-import { didCrossTarget, getCrossedIntervalLevels, isWithinCooldown, retainIntervalSuppressions } from "~/lib/monitoring"
+import { didCrossTarget, getCrossedIntervalLevels, getDeviationPercent, isWithinCooldown, retainIntervalSuppressions } from "~/lib/monitoring"
+import { getLatestPrices as getOkxLatestPrices } from "~/lib/okx.server"
 import type { MarketSnapshot } from "~/lib/price-alert.types"
 import { sendTelegramMessage } from "~/lib/telegram.server"
 
@@ -20,13 +21,47 @@ export async function runMonitoringCycle() {
   isRunning = true
   try {
     const rules = listRules().filter((rule) => rule.enabled)
-    const prices = await getLatestPrices([...new Set(rules.map((rule) => rule.symbol))])
+    const binanceSymbols = new Set<string>()
+    const okxSymbols = new Set<string>()
+    for (const rule of rules) {
+      ;(rule.market === "okx" ? okxSymbols : binanceSymbols).add(rule.symbol)
+      if (rule.triggerType === "basket") {
+        for (const member of rule.basketMembers) {
+          ;(member.market === "okx" ? okxSymbols : binanceSymbols).add(member.symbol)
+        }
+      }
+    }
+    const [binancePrices, okxPrices] = await Promise.all([
+      getBinanceLatestPrices([...binanceSymbols]),
+      getOkxLatestPrices([...okxSymbols]),
+    ])
     const telegram = getEncryptedTelegramSettings()
     const fwalert = getEncryptedFwAlertSettings()
 
     for (const rule of rules) {
-      const currentPrice = prices.get(rule.symbol)
+      const currentPrice = (rule.market === "okx" ? okxPrices : binancePrices).get(rule.symbol)
       if (!currentPrice) continue
+
+      const basketMembers = rule.triggerType === "basket" ? rule.basketMembers : []
+      const basketMemberKeys = new Set(basketMembers.map((member) => `${member.market}:${member.symbol}`))
+      const observedBasketMemberKeys = new Set<string>()
+      const currentBasketBreaches = basketMembers.flatMap((member) => {
+        const memberPrice = (member.market === "okx" ? okxPrices : binancePrices).get(member.symbol)
+        if (!memberPrice) return []
+        const key = `${member.market}:${member.symbol}`
+        observedBasketMemberKeys.add(key)
+        const deviation = getDeviationPercent(currentPrice, memberPrice)
+        return deviation !== null && Math.abs(deviation) >= Number(rule.deviationPercent)
+          ? [{ ...member, key, price: memberPrice, deviation }]
+          : []
+      })
+      const basketBreaches = rule.triggerType === "basket"
+        ? [
+          ...rule.basketBreaches.filter((key) => basketMemberKeys.has(key) && !observedBasketMemberKeys.has(key)),
+          ...currentBasketBreaches.map((member) => member.key),
+        ]
+        : undefined
+      const newBasketBreaches = currentBasketBreaches.filter((member) => !rule.basketBreaches.includes(member.key))
 
       const intervalSuppressions = rule.triggerType === "interval"
         ? retainIntervalSuppressions({
@@ -41,7 +76,7 @@ export async function runMonitoringCycle() {
           currentPrice,
           interval: rule.interval ?? rule.targetPrice,
         })
-        : didCrossTarget({
+        : rule.triggerType === "target" && didCrossTarget({
           direction: rule.direction,
           previousPrice: rule.lastPrice,
           currentPrice,
@@ -51,8 +86,8 @@ export async function runMonitoringCycle() {
         ? crossedLevels.filter((level) => !intervalSuppressions?.includes(level))
         : crossedLevels
 
-      if (alertLevels.length === 0) {
-        updateRuleMarketState(rule.id, { lastPrice: currentPrice, lastError: null, intervalSuppressions })
+      if ((rule.triggerType === "basket" ? newBasketBreaches.length : alertLevels.length) === 0) {
+        updateRuleMarketState(rule.id, { lastPrice: currentPrice, lastError: null, intervalSuppressions, basketBreaches })
         continue
       }
 
@@ -61,13 +96,15 @@ export async function runMonitoringCycle() {
         attempts.push({ channel: "telegram", promise: (async () => {
           if (!telegram) throw new Error("Telegram 渠道尚未配置。")
           const token = await decryptSecret(telegram.encrypted_token)
-          const condition = rule.triggerType === "interval"
+          const condition = rule.triggerType === "basket"
+            ? `篮子偏离 ≥ ${rule.deviationPercent}%\n锚点: ${rule.market === "okx" ? "OKX 现货" : "Binance 现货"} · ${rule.symbol} (${currentPrice})\n偏离交易对:\n${newBasketBreaches.map((member) => `${member.market === "okx" ? "OKX 现货" : "Binance 现货"} · ${member.symbol}: ${member.price} (${member.deviation >= 0 ? "+" : ""}${member.deviation.toFixed(3)}%)`).join("\n")}`
+            : rule.triggerType === "interval"
             ? `${Number(currentPrice) > Number(rule.lastPrice) ? "上穿" : "下穿"}整数倍价位 ${alertLevels.join("、")}（粒度 ${rule.interval ?? rule.targetPrice}，重置范围 ±${rule.intervalResetRange}）`
             : `${rule.direction === "above" ? "上穿" : "下穿"} ${rule.targetPrice}`
           await sendTelegramMessage({
             token,
             chatId: telegram.chat_id,
-            text: `Price Alert\n${rule.symbol} ${condition}\n当前价格: ${currentPrice}`,
+            text: `Price Alert\n${rule.market === "okx" ? "OKX 现货" : "Binance 现货"} · ${rule.symbol} ${condition}\n当前价格: ${currentPrice}`,
           })
         })() })
       }
@@ -99,12 +136,14 @@ export async function runMonitoringCycle() {
           intervalSuppressions: rule.triggerType === "interval"
             ? [...new Set([...(intervalSuppressions ?? []), ...alertLevels])]
             : undefined,
+          basketBreaches,
         })
       } else {
         updateRuleMarketState(rule.id, {
           lastPrice: currentPrice,
           lastError: errors.join(" ") || "通知推送失败。",
           intervalSuppressions,
+          basketBreaches: rule.triggerType === "basket" ? rule.basketBreaches : undefined,
         })
       }
     }

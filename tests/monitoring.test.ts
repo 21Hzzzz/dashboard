@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 
-import { didCrossTarget, getCrossedIntervalLevels, isPositivePrice, isWithinCooldown, retainIntervalSuppressions } from "../app/lib/monitoring"
+import { didCrossTarget, getCrossedIntervalLevels, getDeviationPercent, isPositivePrice, isWithinCooldown, retainIntervalSuppressions } from "../app/lib/monitoring"
 
 test("validates positive target prices", () => {
   expect(isPositivePrice("0.0001")).toBe(true)
@@ -41,4 +41,10 @@ test("keeps an interval level suppressed until price leaves its reset range", ()
 test("applies a local phone cooldown for sixty-five seconds", () => {
   expect(isWithinCooldown("2026-01-01T00:00:00.000Z", 65_000, Date.parse("2026-01-01T00:01:04.999Z"))).toBe(true)
   expect(isWithinCooldown("2026-01-01T00:00:00.000Z", 65_000, Date.parse("2026-01-01T00:01:05.000Z"))).toBe(false)
+})
+
+test("calculates signed deviations from a basket anchor", () => {
+  expect(getDeviationPercent("100000", "103000")).toBe(3)
+  expect(getDeviationPercent("100000", "97000")).toBe(-3)
+  expect(getDeviationPercent("0", "100")).toBeNull()
 })

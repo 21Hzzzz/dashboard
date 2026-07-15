@@ -1,4 +1,4 @@
-import type { BinanceSymbol } from "~/lib/price-alert.types"
+import type { SpotSymbol } from "~/lib/price-alert.types"
 
 const BINANCE_API = "https://api.binance.com"
 
@@ -12,7 +12,7 @@ type ExchangeInfoResponse = {
   }>
 }
 
-export async function getSpotSymbols(): Promise<BinanceSymbol[]> {
+export async function getSpotSymbols(): Promise<SpotSymbol[]> {
   const response = await fetch(`${BINANCE_API}/api/v3/exchangeInfo`, {
     headers: { accept: "application/json" },
   })

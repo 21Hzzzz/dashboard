@@ -81,3 +81,10 @@ export function isWithinCooldown(lastTriggeredAt: string | null, cooldownMs: num
   const timestamp = Date.parse(lastTriggeredAt)
   return Number.isFinite(timestamp) && now - timestamp < cooldownMs
 }
+
+export function getDeviationPercent(anchorPrice: string, comparedPrice: string) {
+  const anchor = Number(anchorPrice)
+  const compared = Number(comparedPrice)
+  if (!Number.isFinite(anchor) || !Number.isFinite(compared) || anchor <= 0) return null
+  return ((compared - anchor) / anchor) * 100
+}
