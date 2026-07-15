@@ -67,7 +67,7 @@ type PageData = {
   fwalert: FwAlertSettingsStatus
 }
 
-type AlertCondition = AlertDirection | "interval" | "basket"
+type AlertCondition = AlertDirection | "interval" | "basket" | null
 
 function marketLabel(market: SpotMarket) {
   return market === "okx" ? "OKX 现货" : "Binance 现货"
@@ -119,7 +119,7 @@ export function PriceMonitoringClient() {
   const [targetPrice, setTargetPrice] = React.useState("")
   const [interval, setInterval] = React.useState("")
   const [intervalResetRange, setIntervalResetRange] = React.useState("")
-  const [condition, setCondition] = React.useState<AlertCondition>("above")
+  const [condition, setCondition] = React.useState<AlertCondition>(null)
   const [channels, setChannels] = React.useState<NotificationChannel[]>(["telegram"])
   const [pairPickerOpen, setPairPickerOpen] = React.useState(false)
   const [basketMarket, setBasketMarket] = React.useState<SpotMarket>("binance")
@@ -167,7 +167,7 @@ export function PriceMonitoringClient() {
     setTargetPrice("")
     setInterval("")
     setIntervalResetRange("200")
-    setCondition("above")
+    setCondition(null)
     setChannels(["telegram"])
     setBasketMarket("binance")
     setBasketSymbol("")
@@ -204,6 +204,9 @@ export function PriceMonitoringClient() {
     setSymbol(exactSymbol)
     if (exactSymbol) setBasketMembers((current) => current.filter((member) => member.market !== market || member.symbol !== exactSymbol))
     setPairPickerOpen(true)
+    window.requestAnimationFrame(() => {
+      document.getElementById("symbol-search")?.closest('[data-slot="command"]')?.querySelector<HTMLElement>('[data-slot="command-list"]')?.scrollTo({ top: 0 })
+    })
   }
 
   function updateBasketPairQuery(value: string) {
@@ -212,6 +215,9 @@ export function PriceMonitoringClient() {
     setBasketPairQuery(query)
     setBasketSymbol(exactSymbol)
     setBasketPickerOpen(true)
+    window.requestAnimationFrame(() => {
+      document.getElementById("basket-symbol-search")?.closest('[data-slot="command"]')?.querySelector<HTMLElement>('[data-slot="command-list"]')?.scrollTo({ top: 0 })
+    })
   }
 
   function addBasketMember() {
@@ -299,7 +305,7 @@ export function PriceMonitoringClient() {
           symbol,
           market,
           triggerType: condition === "interval" ? "interval" : condition === "basket" ? "basket" : "target",
-          direction: condition === "interval" || condition === "basket" ? "above" : condition,
+          direction: condition === "above" || condition === "below" ? condition : "above",
           targetPrice: condition === "interval" || condition === "basket" ? undefined : targetPrice,
           interval: condition === "interval" ? interval : undefined,
           intervalResetRange: condition === "interval" ? intervalResetRange : undefined,
@@ -473,11 +479,11 @@ export function PriceMonitoringClient() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>{editing ? "编辑监控规则" : "新建监控规则"}</DialogTitle><DialogDescription>价格首次进入监控范围只作为基准，不会发送消息。</DialogDescription></DialogHeader>
           <div className="grid gap-4">
-            <div className="grid gap-2"><Label>交易所</Label><Select value={market} onValueChange={(value) => { setMarket(value as SpotMarket); setSymbol(""); setPairQuery(""); setPairPickerOpen(false) }}><SelectTrigger className="w-full"><SelectValue>{(value: SpotMarket | null) => value ? marketLabel(value) : "选择交易所"}</SelectValue></SelectTrigger><SelectContent align="start" alignItemWithTrigger={false}><SelectItem value="binance">Binance 现货</SelectItem><SelectItem value="okx">OKX 现货</SelectItem></SelectContent></Select></div>
-            <div className="grid gap-2"><Label htmlFor="symbol-search">{marketLabel(market)}交易对</Label><Command className="relative overflow-visible border bg-background"><CommandInput id="symbol-search" value={pairQuery} onValueChange={updatePairQuery} onFocus={() => setPairPickerOpen(true)} onBlur={() => window.setTimeout(() => setPairPickerOpen(false), 120)} placeholder={market === "okx" ? "搜索 BTC-USDT、BTC 或 USDT" : "搜索 BTCUSDT、BTC 或 USDT"} />{pairPickerOpen && <CommandList className="absolute top-full z-50 mt-1 max-h-52 w-full border bg-popover shadow-md"><CommandEmpty>未找到交易对</CommandEmpty><CommandGroup>{initialData.symbols[market].map((pair) => <CommandItem key={pair.symbol} value={`${pair.symbol} ${pair.baseAsset} ${pair.quoteAsset}`} onMouseDown={(event) => event.preventDefault()} onSelect={() => { setSymbol(pair.symbol); setPairQuery(pair.symbol); setBasketMembers((current) => current.filter((member) => member.market !== market || member.symbol !== pair.symbol)); setPairPickerOpen(false) }}><span>{pair.symbol}</span><span className="ml-auto text-muted-foreground">{pair.baseAsset}/{pair.quoteAsset}</span></CommandItem>)}</CommandGroup></CommandList>}</Command></div>
-            <div className="grid gap-2"><Label>监控类型</Label><Select value={condition} onValueChange={(value) => setCondition(value as AlertCondition)}><SelectTrigger className="w-full"><SelectValue>{(value: AlertCondition | null) => value === "above" ? "上穿目标价" : value === "below" ? "下穿目标价" : value === "interval" ? "整数倍价位" : value === "basket" ? "篮子偏离" : "选择监控类型"}</SelectValue></SelectTrigger><SelectContent align="start" alignItemWithTrigger={false}><SelectItem value="above">上穿目标价</SelectItem><SelectItem value="below">下穿目标价</SelectItem><SelectItem value="interval">整数倍价位</SelectItem><SelectItem value="basket">篮子偏离</SelectItem></SelectContent></Select></div>
+            <div className="grid gap-2"><Label>监控类型</Label><Select value={condition ?? ""} onValueChange={(value) => setCondition(value as AlertCondition)}><SelectTrigger className="w-full"><SelectValue>{(value: AlertCondition) => value === "above" ? "上穿目标价" : value === "below" ? "下穿目标价" : value === "interval" ? "整数倍价位" : value === "basket" ? "篮子偏离" : "选择监控类型"}</SelectValue></SelectTrigger><SelectContent align="start" alignItemWithTrigger={false}><SelectItem value="above">上穿目标价</SelectItem><SelectItem value="below">下穿目标价</SelectItem><SelectItem value="interval">整数倍价位</SelectItem><SelectItem value="basket">篮子偏离</SelectItem></SelectContent></Select></div>
+            {condition && <><div className="grid gap-2"><Label>{condition === "basket" ? "锚点交易所" : "交易所"}</Label><Select value={market} onValueChange={(value) => { setMarket(value as SpotMarket); setSymbol(""); setPairQuery(""); setPairPickerOpen(false) }}><SelectTrigger className="w-full"><SelectValue>{(value: SpotMarket | null) => value ? marketLabel(value) : "选择交易所"}</SelectValue></SelectTrigger><SelectContent align="start" alignItemWithTrigger={false}><SelectItem value="binance">Binance 现货</SelectItem><SelectItem value="okx">OKX 现货</SelectItem></SelectContent></Select></div>
+            <div className="grid gap-2"><Label htmlFor="symbol-search">{marketLabel(market)}交易对</Label><Command className="relative overflow-visible border bg-background"><CommandInput id="symbol-search" value={pairQuery} onValueChange={updatePairQuery} onFocus={() => setPairPickerOpen(true)} onBlur={() => window.setTimeout(() => setPairPickerOpen(false), 120)} placeholder={market === "okx" ? "搜索 BTC-USDT、BTC 或 USDT" : "搜索 BTCUSDT、BTC 或 USDT"} />{pairPickerOpen && <CommandList key={`${market}:${pairQuery}`} className="absolute top-full z-50 mt-1 max-h-52 w-full border bg-popover shadow-md"><CommandEmpty>未找到交易对</CommandEmpty><CommandGroup>{initialData.symbols[market].map((pair) => <CommandItem key={pair.symbol} value={`${pair.symbol} ${pair.baseAsset} ${pair.quoteAsset}`} onMouseDown={(event) => event.preventDefault()} onSelect={() => { setSymbol(pair.symbol); setPairQuery(pair.symbol); setBasketMembers((current) => current.filter((member) => member.market !== market || member.symbol !== pair.symbol)); setPairPickerOpen(false) }}><span>{pair.symbol}</span><span className="ml-auto text-muted-foreground">{pair.baseAsset}/{pair.quoteAsset}</span></CommandItem>)}</CommandGroup></CommandList>}</Command></div>
             {condition === "basket" ? <div className="grid gap-3 border border-violet-500/20 bg-violet-500/5 p-3"><div className="grid gap-1"><p className="text-sm font-medium">锚点</p><p className="text-xs text-muted-foreground">上方已选交易所和交易对作为基准价格。</p></div><div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"><div className="grid gap-2"><Label>篮子交易所</Label><Select value={basketMarket} onValueChange={(value) => { setBasketMarket(value as SpotMarket); setBasketSymbol(""); setBasketPairQuery(""); setBasketPickerOpen(false) }}><SelectTrigger className="w-full"><SelectValue>{(value: SpotMarket | null) => value ? marketLabel(value) : "选择交易所"}</SelectValue></SelectTrigger><SelectContent align="start" alignItemWithTrigger={false}><SelectItem value="binance">Binance 现货</SelectItem><SelectItem value="okx">OKX 现货</SelectItem></SelectContent></Select></div><Button type="button" className="self-end" variant="outline" onClick={addBasketMember} disabled={!basketSymbol}>添加至篮子</Button></div><div className="grid gap-2"><Label htmlFor="basket-symbol-search">篮子交易对</Label><Command className="relative overflow-visible border bg-background"><CommandInput id="basket-symbol-search" value={basketPairQuery} onValueChange={updateBasketPairQuery} onFocus={() => setBasketPickerOpen(true)} onBlur={() => window.setTimeout(() => setBasketPickerOpen(false), 120)} placeholder={basketMarket === "okx" ? "搜索 BTC-USDT、BTC 或 USDT" : "搜索 BTCUSDT、BTC 或 USDT"} />{basketPickerOpen && <CommandList className="absolute top-full z-50 mt-1 max-h-52 w-full border bg-popover shadow-md"><CommandEmpty>未找到交易对</CommandEmpty><CommandGroup>{initialData.symbols[basketMarket].map((pair) => <CommandItem key={pair.symbol} value={`${pair.symbol} ${pair.baseAsset} ${pair.quoteAsset}`} onMouseDown={(event) => event.preventDefault()} onSelect={() => { setBasketSymbol(pair.symbol); setBasketPairQuery(pair.symbol); setBasketPickerOpen(false) }}><span>{pair.symbol}</span><span className="ml-auto text-muted-foreground">{pair.baseAsset}/{pair.quoteAsset}</span></CommandItem>)}</CommandGroup></CommandList>}</Command></div><div className="grid gap-2"><Label>篮子成员</Label>{basketMembers.length === 0 ? <p className="border border-dashed p-2 text-xs text-muted-foreground">至少添加一个不同于锚点的交易对。</p> : <div className="flex flex-wrap gap-2">{basketMembers.map((member) => <Badge key={`${member.market}:${member.symbol}`} variant="outline" className="gap-1 py-1"><span>{marketLabel(member.market)} · {member.symbol}</span><button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setBasketMembers((current) => current.filter((item) => item.market !== member.market || item.symbol !== member.symbol))} aria-label={`移除 ${member.symbol}`}>×</button></Badge>)}</div>}</div><div className="grid gap-2"><Label htmlFor="deviation-percent">允许偏移量（%）</Label><Input id="deviation-percent" inputMode="decimal" value={deviationPercent} onChange={(event) => setDeviationPercent(event.target.value)} placeholder="例如：3" /><p className="text-xs text-muted-foreground">任一篮子成员相对锚点价格偏离达到该比例时提醒；回到范围内后才会再次布防。</p></div></div> : condition === "interval" ? <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="price-interval">粒度</Label><Input id="price-interval" inputMode="decimal" value={interval} onChange={(event) => setInterval(event.target.value)} placeholder="例如：1000" /></div><div className="grid gap-2"><Label htmlFor="interval-reset-range">重置范围</Label><Input id="interval-reset-range" inputMode="decimal" value={intervalResetRange} onChange={(event) => setInterval(event.target.value)} placeholder="例如：200" /></div><p className="text-xs text-muted-foreground sm:col-span-2">触发某一整数倍价位后，价格须离开该价位的上下重置范围，才会再次提醒该价位。</p></div> : <div className="grid gap-2"><Label htmlFor="target-price">目标价格</Label><Input id="target-price" inputMode="decimal" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="例如：100000" /></div>}
-            <div className="grid gap-2"><Label>通知渠道（至少选择一个）</Label><div className="grid gap-2 border p-3"><ChannelToggle label="Telegram 推送" channel="telegram" channels={channels} onChange={setChannels} /><ChannelToggle label="FwAlert 电话" channel="phone" channels={channels} onChange={setChannels} /></div></div>
+            <div className="grid gap-2"><Label>通知渠道（至少选择一个）</Label><div className="grid gap-2 border p-3"><ChannelToggle label="Telegram 推送" channel="telegram" channels={channels} onChange={setChannels} /><ChannelToggle label="FwAlert 电话" channel="phone" channels={channels} onChange={setChannels} /></div></div></>}
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button><Button onClick={() => void saveRule()} disabled={saving || !symbol || !(condition === "basket" ? basketMembers.length > 0 && deviationPercent : condition === "interval" ? interval && intervalResetRange : targetPrice) || channels.length === 0}>{saving && <LoaderCircle className="animate-spin" />}{editing ? "保存变更" : "创建规则"}</Button></DialogFooter>
         </DialogContent>
